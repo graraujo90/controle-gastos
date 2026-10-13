@@ -25,7 +25,7 @@ export function RelatoriosPage() {
           <button
             key={v}
             onClick={() => setView(v)}
-            className={`rounded-md py-2 text-sm font-semibold ${view === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+            className={`rounded-md py-2 text-sm font-semibold ${view === v ? 'seg-on' : 'text-slate-600'}`}
           >
             {v === 'mes' ? 'Mês' : 'Ano'}
           </button>

@@ -65,7 +65,7 @@ function CategoryEditor({ category, parent, onClose }: { category: Category; par
                 key={c}
                 type="button"
                 onClick={() => setColor(c)}
-                className={`flex h-8 w-8 items-center justify-center rounded-full ${color === c ? 'ring-2 ring-slate-900 ring-offset-2' : ''}`}
+                className={`flex h-8 w-8 items-center justify-center rounded-full ${color === c ? 'ring-2 ring-slate-900 ring-offset-2 ring-offset-white' : ''}`}
                 style={{ background: c }}
                 aria-label={`Cor ${c}`}
                 aria-pressed={color === c}

@@ -18,7 +18,8 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
 - `src/db/` — `db.ts` (schema e migrações), `types.ts`, `seed.ts`, e `repo.ts`: **única** camada que grava no banco.
   As telas nunca gravam direto; trocar o armazenamento significa mexer só em `repo.ts`.
 - `src/features/<tela>/` — uma pasta por tela. Telas que usam Recharts são carregadas com `lazy` em `App.tsx`.
-- `src/components/` — layout, modal, campo de moeda, seletor de mês, cores por tipo.
+- `src/components/` — layout, modal, campo de moeda, seletor de mês, cores por tipo, ícones de categoria.
+- `src/sync/` — login Microsoft, arquivo no OneDrive e o motor que decide quando sincronizar.
 - `src/lib/format.ts` — moeda, datas e meses em pt-BR.
 
 ## Convenções
@@ -34,21 +35,41 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
 - Três tipos de lançamento: receita, despesa e investimento. Resultado do mês = receitas − despesas − investimentos.
 - **Mês de competência = mês do vencimento** (`month` = mês de `dueDate`). No cartão de crédito o vencimento é o da
   fatura (`domain/fatura.ts`); nas outras formas é a data, ou o vencimento informado.
+- A lista de lançamentos pode ser vista por vencimento ou por data da compra (preferência por aparelho). Isso muda
+  só a listagem: totais, orçamento e relatórios seguem sempre o vencimento.
 - Parcelas: uma compra em N vezes vira N lançamentos ligados por `installmentGroupId`; centavos que sobram vão na 1ª.
-- Pago / a pagar só existe em despesas. No crédito, pagar marca a fatura inteira do cartão naquele mês.
+- Confirmação (`paid`) vale para os três tipos: despesa paga, receita recebida, investimento aplicado ou resgatado.
+  **Pendentes contam no resultado do mês como previsto**; o Início mostra à parte o realizado e as pendências.
+  No crédito, pagar marca a fatura inteira do cartão naquele mês.
 - Orçamento: limite só por categoria (subcategorias somam nela). O limite vale do mês em que foi definido em diante,
   até o próximo ajuste; meses anteriores não mudam (`domain/orcamento.ts`).
-- Subcategorias existem em despesas e em investimentos (em investimentos servem para separar por banco).
-- Investimentos: aporte e resgate (`resgate: true`). O resgate abate do investido e volta ao resultado do mês,
-  sem contar como receita. Saldo é informado pelo usuário por categoria/subcategoria (`balances`);
-  rendimento = saldo informado − aportado líquido até aquela data (`domain/investimentos.ts`).
+- Subcategorias existem em despesas e em investimentos.
+- Investimentos: o app **não** acompanha saldo nem rendimento (isso foi removido a pedido do dono). Ficam só os
+  lançamentos, para medir o impacto no orçamento: aporte e resgate (`resgate: true`). O resgate abate do investido
+  e volta ao resultado do mês, sem contar como receita.
 - Relatório anual: "aportado no ano" e "% da receita investida" zeram a cada ano; o saldo inicial passa de um ano
   para o outro.
 - Metas/sonhos não existem como recurso: planos como viagens são categorias de despesa.
-- Cores dos gráficos (`CHART_COLOR`) foram validadas para daltonismo; não troque sem revalidar.
+- Categorias têm cor e ícone (`components/categoryIcons.ts`); sem ícone escolhido, vale o sugerido pelo nome.
 
-## Em andamento
+## Aparência
 
-Plano aprovado: publicar no GitHub Pages e sincronizar os dados por um arquivo em uma pasta do OneDrive pessoal do
-dono, compartilhada com a esposa (cada um com a própria conta Microsoft, via Microsoft Graph). Antes de construir
-a sincronização, confirmar com duas contas pessoais que o convidado lê e grava na pasta compartilhada.
+- Tema claro/escuro em `src/lib/theme.ts`: automático (segue o aparelho) por padrão, por aparelho, sem sincronizar.
+  A mesma regra está repetida no trecho inicial de `index.html`, para não piscar ao abrir; mude os dois juntos.
+- O escuro é feito redefinindo a escala de cores do Tailwind em `.dark` (`src/index.css`). Use as classes normais
+  (`bg-white`, `text-slate-900`…) e elas acompanham o tema; evite cores fixas em hexadecimal nas telas.
+- Cores de gráfico ficam em `CHART_THEME` (`components/typeStyle.ts`), um conjunto por tema, validadas para
+  daltonismo contra o fundo de cada tema. Não troque sem validar de novo.
+
+## Sincronização
+
+- Dados em um arquivo `dados.json` numa pasta do OneDrive pessoal do dono, via Microsoft Graph (`src/sync/`).
+  O dono cria a pasta; um convidado entra pelo link de compartilhamento, com a própria conta Microsoft.
+- Junção registro a registro pelo `updatedAt`, com registro de exclusões (`deletions`); regras em `domain/sync.ts`.
+- Toda exclusão de dado sincronizado passa por `remove()` em `repo.ts`, para deixar o registro de exclusão.
+- Pendente de validação com o dono: convidado (conta da esposa) lendo e gravando na pasta compartilhada.
+
+## Armadilhas do ambiente
+
+- O projeto fica dentro do OneDrive, e o servidor de desenvolvimento às vezes **não percebe arquivos alterados**:
+  a tela continua com código antigo e erros que já foram corrigidos. Na dúvida, reinicie o `npm run dev`.

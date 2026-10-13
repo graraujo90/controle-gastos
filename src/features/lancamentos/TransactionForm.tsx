@@ -145,7 +145,7 @@ export function TransactionForm({ tx, onClose }: Props) {
                   type="button"
                   onClick={() => changeResgate(value)}
                   className={`rounded-md py-1.5 text-sm font-semibold ${
-                    resgateOn === value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                    resgateOn === value ? 'seg-on' : 'text-slate-500'
                   }`}
                 >
                   {value ? 'Resgate' : 'Aporte'}
@@ -257,7 +257,7 @@ export function TransactionForm({ tx, onClose }: Props) {
                         type="button"
                         onClick={() => setMode(m)}
                         className={`rounded-md py-1.5 text-sm font-semibold ${
-                          mode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                          mode === m ? 'seg-on' : 'text-slate-500'
                         }`}
                       >
                         {m === 'total' ? 'O total' : 'Da parcela'}

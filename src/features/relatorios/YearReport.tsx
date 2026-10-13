@@ -4,12 +4,13 @@ import {
   Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { MoneyInput } from '../../components/MoneyInput'
-import { CHART_COLOR } from '../../components/typeStyle'
+import { CHART_THEME } from '../../components/typeStyle'
 import { db } from '../../db/db'
 import { OPENING_BALANCE, setSetting } from '../../db/repo'
 import type { Transaction } from '../../db/types'
 import { annualSummary } from '../../domain/anual'
 import { currentMonth, formatBRL, formatCompact, formatPercent, monthShort } from '../../lib/format'
+import { useTheme } from '../../lib/theme'
 
 interface Props {
   transactions: Transaction[]
@@ -17,13 +18,14 @@ interface Props {
   setYear: (year: number) => void
 }
 
-const AXIS = { fontSize: 11, fill: '#64748b' }
-const RESULT_COLOR = '#0f172a'
 
 const legendText = (value: string) => <span className="text-xs text-slate-600">{value}</span>
 const money = (value: unknown) => formatBRL(Number(value))
 
 export function YearReport({ transactions, year, setYear }: Props) {
+  const chart = CHART_THEME[useTheme()]
+  const AXIS = { fontSize: 11, fill: chart.tick }
+  const tooltip = { contentStyle: { ...chart.tooltip, border: `1px solid ${chart.tooltip.border}`, borderRadius: 8 }, itemStyle: { color: chart.tooltip.color } }
   const opening = useLiveQuery(() => db.settings.get(OPENING_BALANCE), [])
   const openingBalance = typeof opening?.value === 'number' ? opening.value : 0
 
@@ -85,14 +87,14 @@ export function YearReport({ transactions, year, setYear }: Props) {
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} barGap={2} barCategoryGap="20%" margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+              <CartesianGrid vertical={false} stroke={chart.grid} />
+              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: chart.axis }} />
               <YAxis tick={AXIS} tickLine={false} axisLine={false} tickFormatter={formatCompact} width={52} />
-              <Tooltip formatter={money} cursor={{ fill: '#f1f5f9' }} />
+              <Tooltip formatter={money} cursor={{ fill: chart.cursor }} {...tooltip} />
               <Legend iconType="circle" iconSize={8} formatter={legendText} itemSorter={null} />
-              <Bar dataKey="receitas" name="Receitas" fill={CHART_COLOR.receita} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
-              <Bar dataKey="despesas" name="Despesas" fill={CHART_COLOR.despesa} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
-              <Bar dataKey="investimentos" name="Investimentos" fill={CHART_COLOR.investimento} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+              <Bar dataKey="receitas" name="Receitas" fill={chart.series.receita} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+              <Bar dataKey="despesas" name="Despesas" fill={chart.series.despesa} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+              <Bar dataKey="investimentos" name="Investimentos" fill={chart.series.investimento} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -103,14 +105,14 @@ export function YearReport({ transactions, year, setYear }: Props) {
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+              <CartesianGrid vertical={false} stroke={chart.grid} />
+              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: chart.axis }} />
               <YAxis tick={AXIS} tickLine={false} axisLine={false} tickFormatter={formatCompact} width={52} />
-              <ReferenceLine y={0} stroke="#94a3b8" />
-              <Tooltip formatter={money} />
+              <ReferenceLine y={0} stroke={chart.axis} />
+              <Tooltip formatter={money} {...tooltip} />
               <Legend iconType="circle" iconSize={8} formatter={legendText} itemSorter={null} />
-              <Line dataKey="acumuladoAno" name="Resultado acumulado" stroke={RESULT_COLOR} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
-              <Line dataKey="aportadoAno" name="Aportado no ano" stroke={CHART_COLOR.investimento} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3, strokeDasharray: '0' }} isAnimationActive={false} />
+              <Line dataKey="acumuladoAno" name="Resultado acumulado" stroke={chart.result} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+              <Line dataKey="aportadoAno" name="Aportado no ano" stroke={chart.series.investimento} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3, strokeDasharray: '0' }} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

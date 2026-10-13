@@ -71,7 +71,7 @@ export function LancamentosPage() {
                 key={v}
                 onClick={() => changeView(v)}
                 aria-pressed={view === v}
-                className={`rounded-md py-1.5 font-semibold ${view === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                className={`rounded-md py-1.5 font-semibold ${view === v ? 'seg-on' : 'text-slate-600'}`}
               >
                 {v === 'vencimento' ? 'Vencimento' : 'Data da compra'}
               </button>

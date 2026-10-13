@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { AparenciaPage } from './features/ajustes/AparenciaPage'
 import { ArquivadosPage } from './features/ajustes/ArquivadosPage'
 import { BackupPage } from './features/ajustes/BackupPage'
 import { CategoriasPage } from './features/ajustes/CategoriasPage'
@@ -33,6 +34,7 @@ export function App() {
           <Route path="mais/categorias" element={<CategoriasPage />} />
           <Route path="mais/formas" element={<FormasPage />} />
           <Route path="mais/arquivados" element={<ArquivadosPage />} />
+          <Route path="mais/aparencia" element={<AparenciaPage />} />
           <Route path="mais/backup" element={<BackupPage />} />
           <Route path="mais/sincronizacao" element={<SincronizacaoPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
