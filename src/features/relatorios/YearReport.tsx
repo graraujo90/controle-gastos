@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { MoneyInput } from '../../components/MoneyInput'
+import { YearPicker } from '../../components/YearPicker'
 import { CHART_THEME } from '../../components/typeStyle'
 import { db } from '../../db/db'
 import { OPENING_BALANCE, setSetting } from '../../db/repo'
@@ -55,15 +55,7 @@ export function YearReport({ transactions, year, setYear }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <button className="btn btn-ghost !p-2" onClick={() => setYear(year - 1)} aria-label="Ano anterior">
-          <ChevronLeft size={20} />
-        </button>
-        <span className="text-lg font-semibold">{year}</span>
-        <button className="btn btn-ghost !p-2" onClick={() => setYear(year + 1)} aria-label="Próximo ano">
-          <ChevronRight size={20} />
-        </button>
-      </div>
+      <YearPicker year={year} onChange={setYear} />
 
       <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
         {(
