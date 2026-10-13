@@ -30,6 +30,7 @@ export function MaisPage() {
           </Link>
         ))}
       </div>
+      <p className="text-center text-xs text-slate-400">Controle de Gastos · versão {__APP_VERSION__}</p>
     </div>
   )
 }

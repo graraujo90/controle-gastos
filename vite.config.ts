@@ -2,10 +2,13 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import pkg from './package.json' with { type: 'json' }
 
 export default defineConfig({
   // Caminhos relativos: o app funciona hospedado em qualquer pasta (ex.: GitHub Pages).
   base: './',
+  // Número da versão (de package.json) disponível nas telas.
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [
     react(),
     tailwindcss(),
