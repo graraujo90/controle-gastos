@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
+import { CategoryIcon } from '../../components/CategoryIcon'
 import { MonthPicker } from '../../components/MonthPicker'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
@@ -158,8 +159,9 @@ export function InicioPage() {
               const category = categories.get(categoryId)
               return (
                 <li key={categoryId}>
-                  <div className="mb-1 flex justify-between text-sm">
-                    <span>{category?.name ?? '—'}</span>
+                  <div className="mb-1 flex items-center gap-2 text-sm">
+                    <CategoryIcon category={category} size="sm" />
+                    <span className="min-w-0 flex-1 truncate">{category?.name ?? '—'}</span>
                     <span className="font-medium tabular-nums">{formatBRL(total)}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-slate-100">

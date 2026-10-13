@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useApp } from '../../app/AppContext'
+import { CategoryIcon } from '../../components/CategoryIcon'
 import { MonthPicker } from '../../components/MonthPicker'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import type { Category, PaymentMethod, Transaction } from '../../db/types'
@@ -129,7 +130,8 @@ export function MonthReport({ transactions, categories, methods }: Props) {
                     ) : (
                       <span className="w-3.5" />
                     )}
-                    <span className="min-w-0 flex-1 truncate">{category?.name ?? '—'}</span>
+                    <CategoryIcon category={category} size="sm" />
+                    <span className="ml-1 min-w-0 flex-1 truncate">{category?.name ?? '—'}</span>
                     <span className="text-xs text-slate-500">{percent(total, summary.despesas)}%</span>
                     <span className="w-24 text-right font-medium tabular-nums">{formatBRL(total)}</span>
                   </div>

@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useApp } from '../../app/AppContext'
+import { CategoryIcon } from '../../components/CategoryIcon'
 import { Modal } from '../../components/Modal'
 import { MoneyInput } from '../../components/MoneyInput'
 import { MonthPicker } from '../../components/MonthPicker'
@@ -142,7 +143,7 @@ export function OrcamentoPage() {
             onClick={() => setEditing(row)}
           >
             <div className="mb-1 flex items-center gap-2">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: row.category.color }} />
+              <CategoryIcon category={row.category} size="sm" />
               <span className="min-w-0 flex-1 truncate font-medium">{row.category.name}</span>
               <span className="shrink-0 text-sm tabular-nums">
                 <span className="font-semibold">{formatBRL(row.spent)}</span>

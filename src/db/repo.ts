@@ -34,6 +34,26 @@ export async function saveCategory(input: Input<Category>): Promise<string> {
   return id
 }
 
+/**
+ * Altera nome, cor e ícone. Subcategorias que ainda usam a cor da categoria-mãe acompanham a
+ * mudança de cor; as que já tiveram cor própria escolhida ficam como estão.
+ */
+export async function updateCategoryLook(
+  category: Category,
+  look: Pick<Category, 'name' | 'color' | 'icon'>,
+): Promise<void> {
+  await db.transaction('rw', db.categories, async () => {
+    await db.categories.update(category.id, { ...look, updatedAt: now() })
+    if (!category.parentId && look.color !== category.color) {
+      await db.categories
+        .where('parentId')
+        .equals(category.id)
+        .filter((sub) => sub.color === category.color)
+        .modify({ color: look.color, updatedAt: now() })
+    }
+  })
+}
+
 /** Exclui a categoria; se já houver lançamentos nela (ou nas subcategorias), apenas arquiva. */
 export async function removeCategory(id: string): Promise<'excluida' | 'arquivada'> {
   return db.transaction('rw', [db.categories, db.transactions, db.budgets, db.deletions], async () => {

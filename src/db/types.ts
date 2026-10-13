@@ -26,6 +26,8 @@ export interface Category extends Base {
   /** Preenchido apenas em subcategorias (existem em despesas e investimentos). */
   parentId: string | null
   color: string
+  /** Chave de CATEGORY_ICONS. Ausente = ícone sugerido pelo nome (ou herdado da categoria-mãe). */
+  icon?: string
   archived: boolean
 }
 

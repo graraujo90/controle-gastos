@@ -1,9 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { CategoryIcon } from '../../components/CategoryIcon'
+import { CATEGORY_COLORS, CATEGORY_ICONS, iconKeyFor } from '../../components/categoryIcons'
+import { Modal } from '../../components/Modal'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
-import { removeCategory, saveCategory } from '../../db/repo'
+import { removeCategory, saveCategory, updateCategoryLook } from '../../db/repo'
 import { PALETTE } from '../../db/seed'
 import { TX_LABEL_PLURAL, TX_TYPES, type Category, type TxType } from '../../db/types'
 import { BackLink } from './BackLink'
@@ -26,16 +29,97 @@ function AddInput({ placeholder, onAdd }: { placeholder: string; onAdd: (name: s
   )
 }
 
-function CategoryRow({ category, children }: { category: Category; children?: ReactNode }) {
-  const [editing, setEditing] = useState(false)
+/** Janela de edição: nome, cor e ícone. */
+function CategoryEditor({ category, parent, onClose }: { category: Category; parent?: Category; onClose: () => void }) {
   const [name, setName] = useState(category.name)
+  const [color, setColor] = useState(category.color)
+  // undefined = sem escolha própria: usa o sugerido pelo nome ou o da categoria-mãe.
+  const [icon, setIcon] = useState(category.icon)
+  const shown = iconKeyFor({ ...category, name, icon }, parent)
+  // Cor atual fora da paleta (cadastro antigo) continua disponível para não ser trocada sem querer.
+  const colors = CATEGORY_COLORS.includes(color) ? CATEGORY_COLORS : [color, ...CATEGORY_COLORS]
 
-  async function rename(e: FormEvent) {
+  async function save(e: FormEvent) {
     e.preventDefault()
-    if (name.trim()) await saveCategory({ ...category, name: name.trim() })
-    setEditing(false)
+    if (!name.trim()) return
+    await updateCategoryLook(category, { name: name.trim(), color, icon })
+    onClose()
   }
 
+  return (
+    <Modal title={parent ? `Subcategoria de ${parent.name}` : 'Editar categoria'} onClose={onClose}>
+      <form onSubmit={save} className="space-y-4">
+        <div className="flex items-end gap-3">
+          <CategoryIcon category={{ ...category, name, color, icon }} parent={parent} />
+          <div className="min-w-0 flex-1">
+            <label className="label" htmlFor="cat-nome">Nome</label>
+            <input id="cat-nome" className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
+          </div>
+        </div>
+
+        <div>
+          <span className="label">Cor</span>
+          <div className="flex flex-wrap gap-2">
+            {colors.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setColor(c)}
+                className={`flex h-8 w-8 items-center justify-center rounded-full ${color === c ? 'ring-2 ring-slate-900 ring-offset-2' : ''}`}
+                style={{ background: c }}
+                aria-label={`Cor ${c}`}
+                aria-pressed={color === c}
+              >
+                {color === c && <Check size={16} className="text-white" />}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1 flex items-baseline justify-between">
+            <span className="text-sm font-medium text-slate-600">Ícone</span>
+            {icon && (
+              <button type="button" className="text-xs font-medium text-slate-500 hover:underline" onClick={() => setIcon(undefined)}>
+                Usar o sugerido
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-8 gap-1.5 sm:grid-cols-9">
+            {Object.entries(CATEGORY_ICONS).map(([key, Icon]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setIcon(key)}
+                className={`flex aspect-square items-center justify-center rounded-lg ${
+                  shown === key ? 'text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                style={shown === key ? { background: color } : undefined}
+                aria-label={`Ícone ${key}`}
+                aria-pressed={shown === key}
+              >
+                <Icon size={18} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex pt-2">
+          <button type="submit" className="btn btn-primary ml-auto flex-1 sm:flex-none">Salvar</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+interface RowProps {
+  category: Category
+  parent?: Category
+  onEdit: () => void
+  children?: ReactNode
+}
+
+function CategoryRow({ category, parent, onEdit, children }: RowProps) {
   async function remove() {
     if (!confirm(`Excluir "${category.name}"?`)) return
     if ((await removeCategory(category.id)) === 'arquivada') {
@@ -46,25 +130,14 @@ function CategoryRow({ category, children }: { category: Category; children?: Re
   return (
     <div className="flex items-center gap-2 px-3 py-2">
       {children}
-      <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: category.color }} />
-      {editing ? (
-        <form onSubmit={rename} className="flex min-w-0 flex-1 gap-2">
-          <input className="field !py-1" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={40} />
-          <button className="btn btn-ghost !p-2" aria-label="Salvar nome">
-            <Check size={16} />
-          </button>
-        </form>
-      ) : (
-        <>
-          <span className="min-w-0 flex-1 truncate">{category.name}</span>
-          <button className="btn btn-ghost !p-2" onClick={() => setEditing(true)} aria-label={`Renomear ${category.name}`}>
-            <Pencil size={16} />
-          </button>
-          <button className="btn btn-danger !p-2" onClick={remove} aria-label={`Excluir ${category.name}`}>
-            <Trash2 size={16} />
-          </button>
-        </>
-      )}
+      <CategoryIcon category={category} parent={parent} size={parent ? 'sm' : 'md'} />
+      <span className="min-w-0 flex-1 truncate">{category.name}</span>
+      <button className="btn btn-ghost !p-2" onClick={onEdit} aria-label={`Editar ${category.name}`}>
+        <Pencil size={16} />
+      </button>
+      <button className="btn btn-danger !p-2" onClick={remove} aria-label={`Excluir ${category.name}`}>
+        <Trash2 size={16} />
+      </button>
     </div>
   )
 }
@@ -72,10 +145,12 @@ function CategoryRow({ category, children }: { category: Category; children?: Re
 export function CategoriasPage() {
   const [type, setType] = useState<TxType>('despesa')
   const [open, setOpen] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
   const all = (useLiveQuery(() => db.categories.toArray(), []) ?? []).filter((c) => !c.archived)
   const top = all.filter((c) => c.type === type && !c.parentId).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
   const subsOf = (id: string) =>
     all.filter((c) => c.parentId === id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+  const edited = all.find((c) => c.id === editing)
 
   return (
     <div className="space-y-4">
@@ -93,14 +168,11 @@ export function CategoriasPage() {
         ))}
       </div>
 
-      {type !== 'receita' && (
-        <p className="text-sm text-slate-500">
-          Toque na seta para ver e cadastrar subcategorias.{' '}
-          {type === 'despesa'
-            ? 'O limite mensal do orçamento vale para a categoria inteira.'
-            : 'Use-as, se quiser, para separar o mesmo tipo de investimento por banco ou corretora.'}
-        </p>
-      )}
+      <p className="text-sm text-slate-500">
+        Toque no lápis para mudar nome, cor e ícone.{' '}
+        {type === 'despesa' && 'A seta abre as subcategorias; o limite mensal do orçamento vale para a categoria inteira.'}
+        {type === 'investimento' && 'A seta abre as subcategorias, para separar por banco ou corretora se quiser.'}
+      </p>
 
       <div className="card divide-y divide-slate-100">
         {top.map((c) => {
@@ -108,7 +180,7 @@ export function CategoriasPage() {
           const expanded = open === c.id
           return (
             <div key={c.id}>
-              <CategoryRow category={c}>
+              <CategoryRow category={c} onEdit={() => setEditing(c.id)}>
                 {type !== 'receita' && (
                   <button
                     className="btn btn-ghost !p-1"
@@ -123,7 +195,7 @@ export function CategoriasPage() {
               {expanded && (
                 <div className="space-y-1 border-t border-slate-100 bg-slate-50 py-2 pl-8 pr-3">
                   {subs.map((s) => (
-                    <CategoryRow key={s.id} category={s} />
+                    <CategoryRow key={s.id} category={s} parent={c} onEdit={() => setEditing(s.id)} />
                   ))}
                   <div className="px-3 py-1">
                     <AddInput
@@ -147,6 +219,14 @@ export function CategoriasPage() {
           saveCategory({ name, type, parentId: null, color: PALETTE[all.length % PALETTE.length], archived: false })
         }
       />
+
+      {edited && (
+        <CategoryEditor
+          category={edited}
+          parent={all.find((c) => c.id === edited.parentId)}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   )
 }

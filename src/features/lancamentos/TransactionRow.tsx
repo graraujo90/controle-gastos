@@ -1,5 +1,6 @@
 import { CircleAlert, CircleCheck, Circle } from 'lucide-react'
 import { useApp } from '../../app/AppContext'
+import { CategoryIcon } from '../../components/CategoryIcon'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { setPaid } from '../../db/repo'
 import type { Category, PaymentMethod, Transaction } from '../../db/types'
@@ -34,7 +35,7 @@ export function TransactionRow({ tx, categories, methods }: Props) {
   return (
     <div className="flex items-center hover:bg-slate-50">
       <button className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left" onClick={() => openForm(tx)}>
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: category?.color ?? '#94a3b8' }} />
+        <CategoryIcon category={sub ?? category} parent={sub ? category : undefined} />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{title}</span>
           <span className="block truncate text-xs text-slate-500">
