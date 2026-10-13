@@ -1,23 +1,34 @@
 import { useLiveQuery } from 'dexie-react-hooks'
+import { ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
-import { CategoryIcon } from '../../components/CategoryIcon'
+import { CategoryBreakdown } from '../../components/CategoryBreakdown'
 import { MonthPicker } from '../../components/MonthPicker'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
 import { pendingByKind } from '../../domain/contas'
+import { lancamentosLink, type TxFilter } from '../../domain/filtro'
 import { budgetLevel } from '../../domain/orcamento'
-import { summarize, totalsByCategory } from '../../domain/resumo'
+import { expenseBreakdown, summarize } from '../../domain/resumo'
 import { formatBRL, todayISO } from '../../lib/format'
 import { TransactionRow } from '../lancamentos/TransactionRow'
 import { useMonthData } from '../lancamentos/useMonthData'
 import { LEVEL_BAR, useBudget } from '../orcamento/useBudget'
 
+interface PendingRow {
+  label: string
+  total: number
+  count: number
+  hint?: string
+  tone: string
+  filter: TxFilter
+}
+
 export function InicioPage() {
   const { month, openForm } = useApp()
   const { transactions, categories, methods, loading } = useMonthData(month)
   const summary = summarize(transactions)
-  const expenses = totalsByCategory(transactions.filter((t) => t.type === 'despesa'))
+  const breakdown = expenseBreakdown(transactions.filter((t) => t.type === 'despesa'))
   const recent = [...transactions]
     .sort((a, b) => b.dueDate.localeCompare(a.dueDate) || b.createdAt.localeCompare(a.createdAt))
     .slice(0, 5)
@@ -29,19 +40,54 @@ export function InicioPage() {
   const realized = summarize(transactions.filter((t) => t.paid)).resultado
   const hasPending = transactions.some((t) => !t.paid)
 
-  // Atrasados e de hoje independem do mês em exibição; os totais "no mês" seguem o seletor.
+  // Atrasados independem do mês em exibição; os totais "no mês" seguem o seletor.
   const today = todayISO()
   const unpaid = useLiveQuery(() => db.transactions.filter((t) => !t.paid).toArray(), []) ?? []
   const pending = pendingByKind(unpaid, today, month)
-  const bills = pending.pagar
-  const overdue = unpaid.filter((t) => t.dueDate < today).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  // Só entram as pendências que existem; cada uma leva à lista já filtrada.
+  const allPending: PendingRow[] = [
+    {
+      label: 'Em atraso',
+      total: pending.pagar.overdueTotal,
+      count: pending.pagar.overdueCount,
+      hint: 'de qualquer mês',
+      tone: 'text-rose-600',
+      filter: { pendencia: 'pagar', situacao: 'atrasado' },
+    },
+    {
+      label: 'A pagar no mês',
+      total: pending.pagar.monthTotal,
+      count: pending.pagar.monthCount,
+      hint: pending.pagar.todayCount > 0 ? `${formatBRL(pending.pagar.todayTotal)} vence hoje` : undefined,
+      tone: 'text-slate-900',
+      filter: { pendencia: 'pagar' },
+    },
+    {
+      label: 'A receber no mês',
+      total: pending.receber.monthTotal,
+      count: pending.receber.monthCount,
+      tone: 'text-slate-900',
+      filter: { pendencia: 'receber' },
+    },
+    {
+      label: 'A investir no mês',
+      total: pending.investir.monthTotal,
+      count: pending.investir.monthCount,
+      tone: 'text-slate-900',
+      filter: { pendencia: 'investir' },
+    },
+  ]
+  const pendingRows = allPending.filter((row) => row.count > 0)
 
   return (
     <div className="space-y-4">
       <MonthPicker />
 
-      <div className="card p-5">
-        <div className="text-sm text-slate-500">Resultado do mês</div>
+      <Link to="/relatorios" className="card block p-5 hover:bg-slate-50" aria-label="Resultado do mês: abrir relatórios">
+        <div className="flex items-center justify-between text-sm text-slate-500">
+          Resultado do mês
+          <ChevronRight size={16} className="text-slate-400" />
+        </div>
         <div className={`text-3xl font-bold tabular-nums ${summary.resultado < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
           {formatBRL(summary.resultado)}
         </div>
@@ -54,22 +100,26 @@ export function InicioPage() {
             </span>
           </div>
         )}
-      </div>
+      </Link>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         {(
           [
             ['Receitas', summary.receitas, 'receita'],
             ['Despesas', summary.despesas, 'despesa'],
-            ['Investido', summary.investimentos, 'investimento'],
+            ['Investimentos', summary.investimentos, 'investimento'],
           ] as const
         ).map(([label, value, type]) => (
-          <div key={type} className={`rounded-xl p-3 sm:p-4 ${TYPE_STYLE[type].bg}`}>
-            <div className="text-xs font-medium text-slate-600">{label}</div>
+          <Link
+            key={type}
+            to={lancamentosLink({ tipo: type })}
+            className={`rounded-xl p-3 hover:opacity-80 sm:p-4 ${TYPE_STYLE[type].bg}`}
+          >
+            <div className="truncate text-xs font-medium text-slate-600">{label}</div>
             <div className={`truncate text-sm font-bold tabular-nums sm:text-xl ${TYPE_STYLE[type].text}`}>
               {formatBRL(value)}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -96,49 +146,22 @@ export function InicioPage() {
         </Link>
       )}
 
-      <section className="card p-4">
-        <h2 className="mb-3 font-semibold">Pendências</h2>
-        <div className="grid grid-cols-3 gap-2 sm:gap-4">
-          {(
-            [
-              ['Em atraso', bills.overdueTotal, bills.overdueCount, bills.overdueCount > 0 ? 'text-rose-600' : 'text-slate-900'],
-              ['Vence hoje', bills.todayTotal, bills.todayCount, bills.todayCount > 0 ? 'text-amber-600' : 'text-slate-900'],
-              ['A pagar no mês', bills.monthTotal, bills.monthCount, 'text-slate-900'],
-            ] as const
-          ).map(([label, total, count, color]) => (
-            <div key={label}>
-              <div className="text-xs font-medium text-slate-500">{label}</div>
-              <div className={`truncate text-sm font-bold tabular-nums sm:text-lg ${color}`}>{formatBRL(total)}</div>
-              <div className="text-xs text-slate-500">
-                {count} {count === 1 ? 'despesa' : 'despesas'}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 sm:gap-4">
-          {(
-            [
-              ['A receber no mês', pending.receber],
-              ['A investir no mês', pending.investir],
-            ] as const
-          ).map(([label, p]) => (
-            <div key={label}>
-              <div className="text-xs font-medium text-slate-500">{label}</div>
-              <div className="truncate text-sm font-bold tabular-nums sm:text-lg">{formatBRL(p.monthTotal)}</div>
-              <div className="text-xs text-slate-500">
-                {p.monthCount} {p.monthCount === 1 ? 'lançamento' : 'lançamentos'}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {overdue.length > 0 && (
-        <section>
-          <h2 className="mb-1 px-1 font-semibold text-rose-600">Em atraso</h2>
-          <div className="card divide-y divide-slate-100 overflow-hidden">
-            {overdue.map((t) => (
-              <TransactionRow key={t.id} tx={t} categories={categories} methods={methods} />
+      {pendingRows.length > 0 && (
+        <section className="card overflow-hidden">
+          <h2 className="px-4 pt-4 font-semibold">Pendências</h2>
+          <div className="mt-2 divide-y divide-slate-100">
+            {pendingRows.map((row) => (
+              <Link key={row.label} to={lancamentosLink(row.filter)} className="flex items-center gap-2 px-4 py-3 hover:bg-slate-50">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{row.label}</span>
+                  <span className="block truncate text-xs text-slate-500">
+                    {row.count} {row.count === 1 ? 'lançamento' : 'lançamentos'}
+                    {row.hint && ` · ${row.hint}`}
+                  </span>
+                </span>
+                <span className={`shrink-0 font-semibold tabular-nums ${row.tone}`}>{formatBRL(row.total)}</span>
+                <ChevronRight size={16} className="shrink-0 text-slate-400" />
+              </Link>
             ))}
           </div>
         </section>
@@ -151,31 +174,7 @@ export function InicioPage() {
         </div>
       )}
 
-      {expenses.length > 0 && (
-        <section className="card p-4">
-          <h2 className="mb-3 font-semibold">Despesas por categoria</h2>
-          <ul className="space-y-3">
-            {expenses.map(({ categoryId, total }) => {
-              const category = categories.get(categoryId)
-              return (
-                <li key={categoryId}>
-                  <div className="mb-1 flex items-center gap-2 text-sm">
-                    <CategoryIcon category={category} size="sm" />
-                    <span className="min-w-0 flex-1 truncate">{category?.name ?? '—'}</span>
-                    <span className="font-medium tabular-nums">{formatBRL(total)}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${(total / expenses[0].total) * 100}%`, background: category?.color ?? '#94a3b8' }}
-                    />
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      )}
+      {breakdown.categories.length > 0 && <CategoryBreakdown breakdown={breakdown} categories={categories} />}
 
       {recent.length > 0 && (
         <section>

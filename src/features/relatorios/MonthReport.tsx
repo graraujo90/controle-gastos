@@ -62,7 +62,7 @@ export function MonthReport({ transactions, categories, methods }: Props) {
   const tiles = [
     { label: 'Receitas', value: summary.receitas, prev: previous.receitas, type: 'receita' },
     { label: 'Despesas', value: summary.despesas, prev: previous.despesas, type: 'despesa' },
-    { label: 'Investido', value: summary.investimentos, prev: previous.investimentos, type: 'investimento' },
+    { label: 'Investimentos', value: summary.investimentos, prev: previous.investimentos, type: 'investimento' },
   ] as const
 
   return (

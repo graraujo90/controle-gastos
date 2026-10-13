@@ -63,7 +63,7 @@ export function YearReport({ transactions, year, setYear }: Props) {
             ['Resultado do ano', last.acumuladoAno, last.acumuladoAno < 0 ? 'text-rose-600' : 'text-slate-900', ''],
             ['Receitas', total.receitas, 'text-emerald-600', ''],
             ['Despesas', total.despesas, 'text-rose-600', ''],
-            ['Investido no ano', total.investimentos, 'text-indigo-600', invested],
+            ['Investimentos no ano', total.investimentos, 'text-indigo-600', invested],
           ] as const
         ).map(([label, value, color, hint]) => (
           <div key={label} className="card p-4">
