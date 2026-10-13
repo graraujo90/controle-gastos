@@ -100,7 +100,7 @@ function CardInvoice({ card, transactions, month, categories, methods }: CardPro
               </h3>
               <div className="card divide-y divide-slate-100 overflow-hidden">
                 {items.map((t) => (
-                  <TransactionRow key={t.id} tx={t} categories={categories} methods={methods} />
+                  <TransactionRow key={t.id} tx={t} categories={categories} methods={methods} view="vencimento" />
                 ))}
               </div>
             </div>

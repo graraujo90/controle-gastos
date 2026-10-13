@@ -9,6 +9,38 @@ export interface Installment {
   dueDate: string
 }
 
+/** Uma compra como ela foi feita: parcelada ou não, aparece uma vez, com o valor total. */
+export interface Purchase<T> {
+  /** O lançamento que representa a compra (a 1ª parcela disponível, ou o próprio lançamento). */
+  tx: T
+  total: number
+  /** Quantas parcelas a compra tem na lista; 1 para compra à vista. */
+  count: number
+  paidCount: number
+}
+
+/** Junta as parcelas de cada compra em um item só, mantendo a ordem em que as compras aparecem. */
+export function groupPurchases<
+  T extends { amount: number; paid: boolean; installmentGroupId?: string; installmentNumber?: number },
+>(transactions: T[]): Purchase<T>[] {
+  const groups = new Map<string, Purchase<T>>()
+  const out: Purchase<T>[] = []
+  for (const tx of transactions) {
+    const existing = tx.installmentGroupId ? groups.get(tx.installmentGroupId) : undefined
+    if (!existing) {
+      const purchase = { tx, total: tx.amount, count: 1, paidCount: tx.paid ? 1 : 0 }
+      if (tx.installmentGroupId) groups.set(tx.installmentGroupId, purchase)
+      out.push(purchase)
+      continue
+    }
+    existing.total += tx.amount
+    existing.count++
+    if (tx.paid) existing.paidCount++
+    if ((tx.installmentNumber ?? 0) < (existing.tx.installmentNumber ?? 0)) existing.tx = tx
+  }
+  return out
+}
+
 /** Divide o total em N parcelas (centavos); o que sobra da divisão vai na 1ª. */
 export function splitInstallments(total: number, count: number): number[] {
   const base = Math.floor(total / count)

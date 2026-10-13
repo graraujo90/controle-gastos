@@ -2,9 +2,18 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo } from 'react'
 import { db } from '../../db/db'
 
-/** Lançamentos do mês de competência, mais os cadastros indexados por id. */
-export function useMonthData(month: string) {
-  const transactions = useLiveQuery(() => db.transactions.where('month').equals(month).toArray(), [month])
+/** 'vencimento': mês em que o dinheiro sai (regra dos totais). 'compra': mês em que a compra foi feita. */
+export type ViewBy = 'vencimento' | 'compra'
+
+/** Lançamentos do mês, mais os cadastros indexados por id. Os totais do app usam sempre 'vencimento'. */
+export function useMonthData(month: string, by: ViewBy = 'vencimento') {
+  const transactions = useLiveQuery(
+    () =>
+      by === 'vencimento'
+        ? db.transactions.where('month').equals(month).toArray()
+        : db.transactions.where('date').between(`${month}-01`, `${month}-31`, true, true).toArray(),
+    [month, by],
+  )
   const categoryList = useLiveQuery(() => db.categories.toArray(), [])
   const methodList = useLiveQuery(() => db.paymentMethods.toArray(), [])
 

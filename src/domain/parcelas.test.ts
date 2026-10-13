@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { planInstallments, splitInstallments } from './parcelas'
+import { groupPurchases, planInstallments, splitInstallments } from './parcelas'
+
+describe('groupPurchases', () => {
+  const part = (id: string, n: number, paid: boolean) => ({
+    id, amount: 60000, paid, installmentGroupId: 'geladeira', installmentNumber: n, installmentTotal: 3,
+  })
+  const cash = (id: string, amount: number) => ({ id, amount, paid: true })
+
+  it('compra parcelada vira um item com o total, na posição da primeira parcela encontrada', () => {
+    const r = groupPurchases([cash('a', 1000), part('p2', 2, false), cash('b', 2000), part('p1', 1, true), part('p3', 3, false)])
+    expect(r.map((p) => p.tx.id)).toEqual(['a', 'p1', 'b'])
+    expect(r[1]).toMatchObject({ total: 180000, count: 3, paidCount: 1 })
+  })
+
+  it('compra à vista fica como está', () => {
+    expect(groupPurchases([cash('a', 1000)])).toEqual([{ tx: cash('a', 1000), total: 1000, count: 1, paidCount: 1 }])
+  })
+
+  it('compras parceladas diferentes não se misturam', () => {
+    const other = { ...part('x1', 1, true), installmentGroupId: 'sofa', amount: 10000 }
+    const r = groupPurchases([part('p1', 1, true), other, part('p2', 2, true)])
+    expect(r.map((p) => p.total)).toEqual([120000, 10000])
+  })
+})
 
 describe('splitInstallments', () => {
   it('divisão exata', () => {
