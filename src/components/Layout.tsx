@@ -1,31 +1,35 @@
 import { ChartColumn, CreditCard, House, List, Menu, PiggyBank, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AppContext, type AppState } from '../app/AppContext'
 import type { Transaction } from '../db/types'
 import { SyncBadge } from './SyncBadge'
 import { TransactionForm } from '../features/lancamentos/TransactionForm'
 import { currentMonth } from '../lib/format'
 
-// A barra inferior do celular comporta cinco itens mais o botão de novo lançamento; os demais ficam em "Mais".
+// No celular a barra inferior tem dois itens de cada lado do botão de novo lançamento, para ele ficar
+// exatamente no centro; o que não cabe ali fica dentro de "Mais".
 const NAV = [
   { to: '/', label: 'Início', icon: House, mobile: true },
   { to: '/lancamentos', label: 'Lançamentos', icon: List, mobile: true },
   { to: '/orcamento', label: 'Orçamento', icon: PiggyBank, mobile: true },
   { to: '/cartoes', label: 'Cartões', icon: CreditCard, mobile: false },
-  { to: '/relatorios', label: 'Relatórios', icon: ChartColumn, mobile: true },
+  { to: '/relatorios', label: 'Relatórios', icon: ChartColumn, mobile: false },
   { to: '/mais', label: 'Mais', icon: Menu, mobile: true },
 ]
 const MOBILE_NAV = NAV.filter((item) => item.mobile)
 
 function MobileItem({ to, label, icon: Icon }: (typeof NAV)[number]) {
+  const { pathname } = useLocation()
+  // Telas que no celular ficam dentro de "Mais" (Relatórios, Cartões) mantêm "Mais" aceso.
+  const insideMore = to === '/mais' && NAV.some((item) => !item.mobile && pathname.startsWith(item.to))
   return (
     <NavLink
       to={to}
       end={to === '/'}
       className={({ isActive }) =>
-        `flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium tracking-tight ${
-          isActive ? 'text-slate-900' : 'text-slate-400'
+        `flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
+          isActive || insideMore ? 'text-slate-900' : 'text-slate-400'
         }`
       }
     >
@@ -80,7 +84,7 @@ export function Layout() {
           <MobileItem key={item.to} {...item} />
         ))}
         {/* O "+" mora na barra, no centro, para nunca cobrir o conteúdo que rola. */}
-        <div className="flex w-14 shrink-0 items-center justify-center">
+        <div className="flex flex-1 items-center justify-center">
           <button
             className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white shadow-md"
             onClick={() => setForm({})}
