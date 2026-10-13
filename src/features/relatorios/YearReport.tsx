@@ -2,6 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
+import { Link } from 'react-router-dom'
+import { useApp } from '../../app/AppContext'
 import { MoneyInput } from '../../components/MoneyInput'
 import { YearPicker } from '../../components/YearPicker'
 import { CHART_THEME } from '../../components/typeStyle'
@@ -9,6 +11,7 @@ import { db } from '../../db/db'
 import { OPENING_BALANCE, setSetting } from '../../db/repo'
 import type { Transaction } from '../../db/types'
 import { annualSummary } from '../../domain/anual'
+import { lancamentosLink } from '../../domain/filtro'
 import { currentMonth, formatBRL, formatCompact, formatPercent, monthShort } from '../../lib/format'
 import { useTheme } from '../../lib/theme'
 
@@ -23,6 +26,7 @@ const legendText = (value: string) => <span className="text-xs text-slate-600">{
 const money = (value: unknown) => formatBRL(Number(value))
 
 export function YearReport({ transactions, year, setYear }: Props) {
+  const { month, setMonth } = useApp()
   const chart = CHART_THEME[useTheme()]
   const AXIS = { fontSize: 11, fill: chart.tick }
   const tooltip = { contentStyle: { ...chart.tooltip, border: `1px solid ${chart.tooltip.border}`, borderRadius: 8 }, itemStyle: { color: chart.tooltip.color } }
@@ -60,18 +64,33 @@ export function YearReport({ transactions, year, setYear }: Props) {
       <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
         {(
           [
-            ['Resultado do ano', last.acumuladoAno, last.acumuladoAno < 0 ? 'text-rose-600' : 'text-slate-900', ''],
-            ['Receitas', total.receitas, 'text-emerald-600', ''],
-            ['Despesas', total.despesas, 'text-rose-600', ''],
-            ['Investimentos no ano', total.investimentos, 'text-indigo-600', invested],
+            ['Resultado do ano', last.acumuladoAno, last.acumuladoAno < 0 ? 'text-rose-600' : 'text-slate-900', '', undefined],
+            ['Receitas', total.receitas, 'text-emerald-600', '', 'receita'],
+            ['Despesas', total.despesas, 'text-rose-600', '', 'despesa'],
+            ['Investimentos no ano', total.investimentos, 'text-indigo-600', invested, 'investimento'],
           ] as const
-        ).map(([label, value, color, hint]) => (
-          <div key={label} className="card p-4">
-            <div className="text-xs font-medium text-slate-500">{label}</div>
-            <div className={`truncate text-xl font-bold tabular-nums ${color}`}>{formatBRL(value)}</div>
-            {hint && <div className="text-xs text-slate-500">{hint}</div>}
-          </div>
-        ))}
+        ).map(([label, value, color, hint, type]) => {
+          const content = (
+            <>
+              <div className="text-xs font-medium text-slate-500">{label}</div>
+              <div className={`truncate text-xl font-bold tabular-nums ${color}`}>{formatBRL(value)}</div>
+              {hint && <div className="text-xs text-slate-500">{hint}</div>}
+            </>
+          )
+          // Os indicadores por tipo abrem os lançamentos do ano inteiro; a lista usa o ano do mês em exibição.
+          return type ? (
+            <Link
+              key={label}
+              to={lancamentosLink({ tipo: type }, 'ano')}
+              onClick={() => setMonth(`${year}-${month.slice(5, 7)}`)}
+              className="card block p-4 hover:bg-slate-50"
+            >
+              {content}
+            </Link>
+          ) : (
+            <div key={label} className="card p-4">{content}</div>
+          )
+        })}
       </div>
 
       <section className="card p-4">

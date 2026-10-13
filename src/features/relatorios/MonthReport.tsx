@@ -1,11 +1,13 @@
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, CreditCard } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
-import { CategoryIcon } from '../../components/CategoryIcon'
+import { CategoryBreakdown, percent as percentOf } from '../../components/CategoryBreakdown'
 import { MonthPicker } from '../../components/MonthPicker'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import type { Category, PaymentMethod, Transaction } from '../../db/types'
-import { summarize } from '../../domain/resumo'
+import { ALL_CREDIT, lancamentosLink } from '../../domain/filtro'
+import { expenseBreakdown, methodBreakdown, summarize } from '../../domain/resumo'
 import { addMonths, formatBRL, monthLabel } from '../../lib/format'
 
 interface Props {
@@ -15,13 +17,6 @@ interface Props {
 }
 
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0)
-
-/** Soma os valores por chave e devolve do maior para o menor. */
-function totalsBy(list: Transaction[], key: (t: Transaction) => string): [string, number][] {
-  const map = new Map<string, number>()
-  for (const t of list) map.set(key(t), (map.get(key(t)) ?? 0) + t.amount)
-  return [...map].sort((a, b) => b[1] - a[1])
-}
 
 /** Variação em relação ao mês anterior, em texto neutro (subir é bom para receita e ruim para despesa). */
 function Delta({ current, previous, month }: { current: number; previous: number; month: string }) {
@@ -35,17 +30,17 @@ function Delta({ current, previous, month }: { current: number; previous: number
   )
 }
 
-function Bar({ value, max, color }: { value: number; max: number; color: string }) {
+function Bar({ value, max }: { value: number; max: number }) {
   return (
     <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-      <div className="h-full rounded-full" style={{ width: `${max > 0 ? (value / max) * 100 : 0}%`, background: color }} />
+      <div className="h-full rounded-full bg-slate-500" style={{ width: `${max > 0 ? (value / max) * 100 : 0}%` }} />
     </div>
   )
 }
 
 export function MonthReport({ transactions, categories, methods }: Props) {
   const { month } = useApp()
-  const [open, setOpen] = useState<string | null>(null)
+  const [cardsOpen, setCardsOpen] = useState(false)
 
   const current = transactions.filter((t) => t.month === month)
   const summary = summarize(current)
@@ -55,9 +50,10 @@ export function MonthReport({ transactions, categories, methods }: Props) {
   const netInvested = Math.max(0, summary.investimentos)
 
   const expenses = current.filter((t) => t.type === 'despesa')
-  const byCategory = totalsBy(expenses, (t) => t.categoryId)
-  const byMethod = totalsBy(expenses, (t) => t.paymentMethodId)
-  const paid = expenses.filter((t) => t.paid).reduce((sum, t) => sum + t.amount, 0)
+  const breakdown = expenseBreakdown(expenses)
+  const creditIds = new Set([...methods.values()].filter((m) => m.kind === 'credito').map((m) => m.id))
+  const byMethod = methodBreakdown(expenses, creditIds)
+  const maxMethod = byMethod[0]?.total ?? 0
 
   const tiles = [
     { label: 'Receitas', value: summary.receitas, prev: previous.receitas, type: 'receita' },
@@ -78,13 +74,13 @@ export function MonthReport({ transactions, categories, methods }: Props) {
           <span className="text-xs text-slate-500">{summary.resultado < 0 ? 'prejuízo no mês' : 'lucro no mês'}</span>
         </div>
         {tiles.map((tile) => (
-          <div key={tile.type} className="card p-4">
+          <Link key={tile.type} to={lancamentosLink({ tipo: tile.type })} className="card block p-4 hover:bg-slate-50">
             <div className="text-xs font-medium text-slate-500">{tile.label}</div>
             <div className={`truncate text-xl font-bold tabular-nums ${TYPE_STYLE[tile.type].text}`}>
               {formatBRL(tile.value)}
             </div>
             <Delta current={tile.value} previous={tile.prev} month={month} />
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -103,70 +99,62 @@ export function MonthReport({ transactions, categories, methods }: Props) {
         </section>
       )}
 
-      <section className="card p-4">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-semibold">Despesas por categoria</h2>
-          {summary.despesas > 0 && (
-            <span className="text-xs text-slate-500">{percent(paid, summary.despesas)}% já pago</span>
-          )}
-        </div>
-        {byCategory.length === 0 && <p className="text-sm text-slate-500">Nenhuma despesa neste mês.</p>}
-        <ul className="space-y-3">
-          {byCategory.map(([id, total]) => {
-            const category = categories.get(id)
-            const subs = totalsBy(expenses.filter((t) => t.categoryId === id), (t) => t.subcategoryId ?? '')
-            const hasSubs = subs.some(([subId]) => subId)
-            const expanded = open === id
-            return (
-              <li key={id}>
-                <button
-                  className="block w-full text-left"
-                  onClick={() => hasSubs && setOpen(expanded ? null : id)}
-                  aria-expanded={hasSubs ? expanded : undefined}
-                >
-                  <div className="mb-1 flex items-center gap-1 text-sm">
-                    {hasSubs ? (
-                      expanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />
-                    ) : (
-                      <span className="w-3.5" />
-                    )}
-                    <CategoryIcon category={category} size="sm" />
-                    <span className="ml-1 min-w-0 flex-1 truncate">{category?.name ?? '—'}</span>
-                    <span className="text-xs text-slate-500">{percent(total, summary.despesas)}%</span>
-                    <span className="w-24 text-right font-medium tabular-nums">{formatBRL(total)}</span>
-                  </div>
-                  <Bar value={total} max={byCategory[0][1]} color={category?.color ?? '#94a3b8'} />
-                </button>
-                {expanded && (
-                  <ul className="mt-2 space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                    {subs.map(([subId, subTotal]) => (
-                      <li key={subId} className="flex justify-between">
-                        <span className="text-slate-600">{subId ? (categories.get(subId)?.name ?? '—') : 'Sem subcategoria'}</span>
-                        <span className="tabular-nums">{formatBRL(subTotal)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      </section>
+      <CategoryBreakdown breakdown={breakdown} categories={categories} expandable />
 
       {byMethod.length > 0 && (
         <section className="card p-4">
           <h2 className="mb-3 font-semibold">Despesas por forma de pagamento</h2>
           <ul className="space-y-3">
-            {byMethod.map(([id, total]) => (
-              <li key={id}>
-                <div className="mb-1 flex items-center gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{methods.get(id)?.name ?? '—'}</span>
-                  <span className="text-xs text-slate-500">{percent(total, summary.despesas)}%</span>
-                  <span className="w-24 text-right font-medium tabular-nums">{formatBRL(total)}</span>
-                </div>
-                <Bar value={total} max={byMethod[0][1]} color="#64748b" />
-              </li>
-            ))}
+            {byMethod.map((row) => {
+              const grouped = row.kind === 'cartoes'
+              const name = grouped ? 'Cartões de crédito' : (methods.get(row.id)?.name ?? '—')
+              return (
+                <li key={row.id}>
+                  <div className="flex items-center gap-1">
+                    {grouped ? (
+                      <button
+                        className="-ml-1 rounded p-1 text-slate-400 hover:bg-slate-100"
+                        onClick={() => setCardsOpen(!cardsOpen)}
+                        aria-expanded={cardsOpen}
+                        aria-label={`${cardsOpen ? 'Fechar' : 'Abrir'} os cartões`}
+                      >
+                        {cardsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </button>
+                    ) : (
+                      <span className="w-5 shrink-0" />
+                    )}
+                    <Link
+                      to={lancamentosLink({ tipo: 'despesa', forma: grouped ? ALL_CREDIT : row.id })}
+                      className="-my-1 flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-sm hover:bg-slate-50"
+                    >
+                      {grouped && <CreditCard size={16} className="shrink-0 text-slate-400" />}
+                      <span className="min-w-0 flex-1 truncate">{name}</span>
+                      <span className="text-xs text-slate-500">{percentOf(row.share)}</span>
+                      <span className="w-24 text-right font-medium tabular-nums">{formatBRL(row.total)}</span>
+                    </Link>
+                  </div>
+                  <div className="ml-5 mt-1">
+                    <Bar value={row.total} max={maxMethod} />
+                  </div>
+                  {grouped && cardsOpen && (
+                    <ul className="ml-5 mt-2 divide-y divide-slate-100 rounded-lg bg-slate-50 px-3 text-sm">
+                      {row.cards.map((card) => (
+                        <li key={card.id}>
+                          <Link
+                            to={lancamentosLink({ tipo: 'despesa', forma: card.id })}
+                            className="flex items-center gap-2 py-2 hover:underline"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-slate-600">{methods.get(card.id)?.name ?? '—'}</span>
+                            <span className="text-xs text-slate-500">{percentOf(card.share)}</span>
+                            <span className="w-24 text-right tabular-nums">{formatBRL(card.total)}</span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </section>
       )}
