@@ -59,13 +59,32 @@ export async function forgetAccount(homeAccountId: string): Promise<void> {
   if (account) await app.clearCache({ account })
 }
 
+// Nenhuma etapa de rede pode ficar pendurada para sempre: em celular, uma conexão que troca de rede
+// (wi-fi para 4G, volta da tela de login) pode deixar um pedido sem resposta nem erro.
+const TIMEOUT_MS = 25000
+
+function withTimeout<T>(promise: Promise<T>, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TimeoutError(`${what} demorou demais para responder.`)), TIMEOUT_MS)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+/** Uma etapa de rede não respondeu a tempo. É passageiro: a próxima sincronização tenta de novo. */
+export class TimeoutError extends Error {}
+
+const request = (url: string, init: RequestInit, what: string) =>
+  withTimeout(fetch(url, { ...init, cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) }), what)
+
 async function token(homeAccountId: string): Promise<string> {
-  const app = await client()
+  const app = await withTimeout(client(), 'O login da Microsoft')
   const account = app.getAccount({ homeAccountId })
   if (!account) throw new ReconnectError('Conta não encontrada neste aparelho.')
   try {
-    return (await app.acquireTokenSilent({ scopes: SCOPES, account })).accessToken
+    return (await withTimeout(app.acquireTokenSilent({ scopes: SCOPES, account }), 'O login da Microsoft')).accessToken
   } catch (error) {
+    if (error instanceof TimeoutError) throw error
     const { InteractionRequiredAuthError } = await import('@azure/msal-browser')
     if (error instanceof InteractionRequiredAuthError) throw new ReconnectError('O acesso ao OneDrive expirou.')
     throw error
@@ -73,11 +92,8 @@ async function token(homeAccountId: string): Promise<string> {
 }
 
 async function graph(homeAccountId: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(GRAPH + path, {
-    ...init,
-    cache: 'no-store',
-    headers: { ...init.headers, Authorization: `Bearer ${await token(homeAccountId)}` },
-  })
+  const headers = { ...init.headers, Authorization: `Bearer ${await token(homeAccountId)}` }
+  const response = await request(GRAPH + path, { ...init, headers }, 'O OneDrive')
   if (!response.ok && response.status !== 404 && response.status !== 412) {
     const body = await response.json().catch(() => null)
     throw new GraphError(response.status, body?.error?.message ?? `Erro ${response.status} do OneDrive.`)
@@ -122,9 +138,11 @@ export async function download(homeAccountId: string, ref: FolderRef): Promise<{
   const item = await meta.json()
   const url: string | undefined = item['@microsoft.graph.downloadUrl']
   // O endereço de download já vem autorizado; sem ele, baixa pela própria API.
-  const content = url ? await fetch(url, { cache: 'no-store' }) : await graph(homeAccountId, `${filePath(ref)}:/content`)
+  const content = url
+    ? await request(url, {}, 'O download do OneDrive')
+    : await graph(homeAccountId, `${filePath(ref)}:/content`)
   if (!content.ok) throw new GraphError(content.status, 'Não foi possível baixar os dados do OneDrive.')
-  return { text: await content.text(), eTag: item.eTag }
+  return { text: await withTimeout(content.text(), 'O download do OneDrive'), eTag: item.eTag }
 }
 
 /**

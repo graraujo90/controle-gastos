@@ -28,6 +28,8 @@ export interface SyncState {
   account?: string
   lastSyncAt?: string
   error?: string
+  /** O que a sincronização está fazendo agora, para a tela mostrar onde ela está. */
+  step?: string
 }
 
 const META = 'sync'
@@ -45,10 +47,12 @@ export function subscribeSync(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-function setState(status: SyncStatus, error?: string) {
-  state = { status, mode: meta?.mode, account: meta?.account, lastSyncAt: meta?.lastSyncAt, error }
+function setState(status: SyncStatus, error?: string, step?: string) {
+  state = { status, mode: meta?.mode, account: meta?.account, lastSyncAt: meta?.lastSyncAt, error, step }
   listeners.forEach((listener) => listener())
 }
+
+const setStep = (step: string) => setState('sincronizando', undefined, step)
 
 async function saveMeta(next: SyncMeta | null) {
   meta = next
@@ -108,9 +112,14 @@ export async function syncNow(): Promise<void> {
     await saveMeta({ ...meta, lastSyncAt: new Date().toISOString() })
     setState('ok')
   } catch (error) {
+    const step = state.step ? ` (etapa: ${state.step.toLowerCase()})` : ''
     if (error instanceof onedrive.ReconnectError) setState('reconectar', error.message)
-    else if (!navigator.onLine || error instanceof TypeError) setState('offline')
-    else setState('erro', error instanceof Error ? error.message : 'Erro ao sincronizar.')
+    else if (!navigator.onLine) setState('offline')
+    // Falha de rede ou demora: passageiro, a próxima tentativa automática resolve.
+    else if (error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError')) {
+      setState('offline', `Sem resposta do OneDrive${step}. O app tenta de novo sozinho.`)
+    } else if (error instanceof onedrive.TimeoutError) setState('erro', `${error.message}${step} O app tenta de novo sozinho.`)
+    else setState('erro', (error instanceof Error ? error.message : 'Erro ao sincronizar.') + step)
   } finally {
     running = false
   }
@@ -119,11 +128,14 @@ export async function syncNow(): Promise<void> {
 async function cycle(current: SyncMeta): Promise<void> {
   // Outro aparelho pode gravar entre a leitura e o envio; nesse caso o envio é recusado e o ciclo recomeça.
   for (let attempt = 0; attempt < 4; attempt++) {
+    setStep('Baixando do OneDrive')
     const remote = await onedrive.download(current.homeAccountId, current)
+    setStep('Lendo os dados deste aparelho')
     const local = await readLocal()
 
     if (!remote) {
       // Arquivo ainda não existe (ou foi apagado do OneDrive): este aparelho o recria.
+      setStep('Enviando ao OneDrive')
       const generation = current.generation ?? crypto.randomUUID()
       const eTag = await push(current, { generation, data: local })
       if (eTag) return void (await saveMeta({ ...current, generation, eTag }))
@@ -133,13 +145,18 @@ async function cycle(current: SyncMeta): Promise<void> {
     const file = parseSync(remote.text)
     if (file.generation !== current.generation) {
       // Alguém substituiu tudo de propósito: adota o conteúdo da nuvem em vez de juntar.
+      setStep('Gravando neste aparelho')
       await writeLocal(file.data)
       return void (await saveMeta({ ...current, generation: file.generation, eTag: remote.eTag }))
     }
 
     const merged = mergeData(local, file.data)
-    if (merged.localChanged) await writeLocal(merged.data)
+    if (merged.localChanged) {
+      setStep('Gravando neste aparelho')
+      await writeLocal(merged.data)
+    }
     if (!merged.remoteChanged) return void (await saveMeta({ ...current, eTag: remote.eTag }))
+    setStep('Enviando ao OneDrive')
     const eTag = await push(current, { generation: file.generation, data: merged.data }, remote.eTag)
     if (eTag) return void (await saveMeta({ ...current, eTag }))
   }

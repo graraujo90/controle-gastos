@@ -130,6 +130,7 @@ export function SincronizacaoPage() {
             </div>
             <div className="pt-2 text-sm">
               <span className="font-medium">{STATUS_TEXT[sync.status]}</span>
+              {sync.status === 'sincronizando' && sync.step && <span className="text-slate-500"> · {sync.step}</span>}
               {sync.lastSyncAt && <span className="text-slate-500"> · última vez em {dateTime(sync.lastSyncAt)}</span>}
             </div>
           </section>
