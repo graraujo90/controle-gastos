@@ -1,10 +1,12 @@
 // Camada única de acesso a dados: as telas nunca gravam no banco diretamente.
 // Trocar o armazenamento local por nuvem no futuro significa reescrever só este arquivo.
 import { BACKUP_TABLES, buildBackup, type Backup, type BackupTable } from '../domain/backup'
+import { dueDateFor, isCredit } from '../domain/fatura'
 import type { Installment } from '../domain/parcelas'
+import { missingOccurrences, occurrenceDate } from '../domain/recorrencia'
 import { monthOf, todayISO } from '../lib/format'
 import { db } from './db'
-import type { Category, PaymentMethod, Transaction } from './types'
+import type { Category, PaymentMethod, Recurrence, Transaction } from './types'
 
 const now = () => new Date().toISOString()
 
@@ -148,7 +150,10 @@ export async function setBudget(month: string, categoryId: string, limit: number
 }
 
 export type TransactionInput = Input<
-  Omit<Transaction, 'month' | 'installmentGroupId' | 'installmentNumber' | 'installmentTotal'>
+  Omit<
+    Transaction,
+    'month' | 'installmentGroupId' | 'installmentNumber' | 'installmentTotal' | 'recurrenceId' | 'recurrenceNumber'
+  >
 >
 
 export async function saveTransaction(input: TransactionInput): Promise<string> {
@@ -188,6 +193,137 @@ export async function saveInstallments(
       updatedAt: now(),
     })),
   )
+}
+
+// ---------- recorrência ----------
+
+/** Id previsível: dois aparelhos que criem a mesma ocorrência geram o mesmo registro, não dois. */
+const occurrenceId = (recurrenceId: string, n: number) => `${recurrenceId}:${n}`
+
+/** Um lançamento para cada ocorrência pedida, a partir do modelo da regra. */
+function buildOccurrences(rule: Recurrence, numbers: number[], method: PaymentMethod | undefined, firstPaid?: boolean) {
+  const today = todayISO()
+  return numbers.map((n): Transaction => {
+    const date = occurrenceDate(rule.startDate, rule.frequency, n)
+    // No crédito o vencimento é o da fatura daquela data; fora dele, o vencimento informado anda junto.
+    const dueDate = isCredit(method)
+      ? dueDateFor(date, method)
+      : rule.startDueDate
+        ? occurrenceDate(rule.startDueDate, rule.frequency, n)
+        : date
+    return {
+      id: occurrenceId(rule.id, n),
+      recurrenceId: rule.id,
+      recurrenceNumber: n,
+      type: rule.type,
+      amount: rule.amount,
+      categoryId: rule.categoryId,
+      subcategoryId: rule.subcategoryId,
+      paymentMethodId: rule.paymentMethodId,
+      description: rule.description,
+      resgate: rule.resgate,
+      date,
+      dueDate,
+      month: monthOf(dueDate),
+      // A 1ª segue o que foi marcado no formulário; as demais só entram confirmadas se já passaram.
+      paid: n === 1 && firstPaid !== undefined ? firstPaid : dueDate < today,
+      // Carimbo da regra, não o de agora: qualquer edição feita à mão é mais recente e vence na
+      // sincronização, e dois aparelhos criando a mesma ocorrência produzem registros idênticos.
+      createdAt: rule.updatedAt,
+      updatedAt: rule.updatedAt,
+    }
+  })
+}
+
+/** Cria o que falta de uma regra e avança o contador dela. */
+async function materialize(rule: Recurrence, firstPaid?: boolean): Promise<void> {
+  const numbers = missingOccurrences(rule, todayISO())
+  if (numbers.length === 0) return
+  const method = await db.paymentMethods.get(rule.paymentMethodId)
+  await db.transaction('rw', db.transactions, db.recurrences, async () => {
+    await db.transactions.bulkPut(buildOccurrences(rule, numbers, method, firstPaid))
+    // O contador avança sem mexer em updatedAt: completar o horizonte não é uma alteração da regra.
+    await db.recurrences.update(rule.id, { generated: numbers[numbers.length - 1] })
+  })
+}
+
+/** Lançamento que se repete: grava a regra e cria as ocorrências (todas, ou até o horizonte se não tem fim). */
+export async function saveRecurring(
+  input: Omit<TransactionInput, 'id'>,
+  repeat: Pick<Recurrence, 'frequency' | 'count'>,
+): Promise<void> {
+  const stamp = now()
+  const rule: Recurrence = {
+    id: crypto.randomUUID(),
+    frequency: repeat.frequency,
+    count: repeat.count,
+    startDate: input.date,
+    startDueDate: input.dueDate !== input.date ? input.dueDate : undefined,
+    generated: 0,
+    ended: false,
+    type: input.type,
+    amount: input.amount,
+    categoryId: input.categoryId,
+    subcategoryId: input.subcategoryId,
+    paymentMethodId: input.paymentMethodId,
+    description: input.description,
+    resgate: input.resgate,
+    createdAt: stamp,
+    updatedAt: stamp,
+  }
+  await db.recurrences.add(rule)
+  await materialize(rule, input.paid)
+}
+
+/** Completa as recorrências sem data para acabar até o horizonte. Roda ao abrir o app e depois de sincronizar. */
+export async function extendRecurrences(): Promise<void> {
+  const open = await db.recurrences.filter((r) => !r.ended && r.count === undefined).toArray()
+  for (const rule of open) await materialize(rule)
+}
+
+type RecurringChanges = Pick<
+  Transaction,
+  'type' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'resgate'
+>
+
+/**
+ * "Este e os próximos": aplica valor, categoria, forma e descrição às ocorrências seguintes ainda não
+ * confirmadas e ao modelo da regra (o que for criado depois já nasce assim). As datas não mudam.
+ */
+export async function updateFollowing(tx: Transaction, changes: RecurringChanges): Promise<void> {
+  if (!tx.recurrenceId) return
+  const method = await db.paymentMethods.get(changes.paymentMethodId)
+  const wasCredit = isCredit(await db.paymentMethods.get(tx.paymentMethodId))
+  const stamp = now()
+  await db.transaction('rw', db.transactions, db.recurrences, async () => {
+    await db.recurrences.update(tx.recurrenceId!, { ...changes, updatedAt: stamp })
+    await db.transactions
+      .where('recurrenceId')
+      .equals(tx.recurrenceId!)
+      .filter((t) => (t.recurrenceNumber ?? 0) > (tx.recurrenceNumber ?? 0) && !t.paid)
+      .modify((t) => {
+        Object.assign(t, changes, { updatedAt: stamp })
+        // Trocar para ou de cartão de crédito muda em que fatura cada ocorrência cai.
+        if (isCredit(method)) t.dueDate = dueDateFor(t.date, method)
+        else if (wasCredit) t.dueDate = t.date
+        t.month = monthOf(t.dueDate)
+      })
+  })
+}
+
+/**
+ * Encerra a recorrência: nada mais é criado. Com `fromNumber`, apaga aquela ocorrência e as seguintes
+ * (é o "excluir este e os próximos"); sem ele, apaga só as futuras ainda não confirmadas.
+ */
+export async function endRecurrence(recurrenceId: string, fromNumber?: number): Promise<void> {
+  const today = todayISO()
+  const ids = await db.transactions
+    .where('recurrenceId')
+    .equals(recurrenceId)
+    .filter((t) => (fromNumber !== undefined ? (t.recurrenceNumber ?? 0) >= fromNumber : !t.paid && t.date > today))
+    .primaryKeys()
+  await remove('transactions', ids)
+  await db.recurrences.update(recurrenceId, { ended: true, updatedAt: now() })
 }
 
 /**

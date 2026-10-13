@@ -140,3 +140,114 @@ describe('sincronização entre aparelhos', () => {
     expect(await descriptions(b)).toEqual(['da nuvem'])
   })
 })
+
+describe('lançamentos recorrentes', () => {
+  type Device = Awaited<ReturnType<typeof newDevice>>
+
+  async function addRecurring(device: Device, count: number | undefined, paid = true) {
+    const { todayISO } = await import('../lib/format')
+    const category = (await device.db.categories.toArray()).find((c) => c.type === 'despesa' && !c.parentId)!
+    const method = (await device.db.paymentMethods.toArray()).find((m) => m.kind !== 'credito')!
+    await device.repo.saveRecurring(
+      {
+        type: 'despesa', date: todayISO(), dueDate: todayISO(), amount: 150000, categoryId: category.id,
+        subcategoryId: null, paymentMethodId: method.id, description: 'aluguel', paid, resgate: false,
+      },
+      { frequency: 'mensal', count },
+    )
+    return (await device.db.recurrences.toArray())[0]
+  }
+  const numbers = async (device: Device) =>
+    (await device.db.transactions.toArray()).map((t) => t.recurrenceNumber!).sort((a, b) => a - b)
+
+  beforeEach(() => {
+    cloud.text = null
+    cloud.version = 0
+  })
+
+  it('com número de vezes: cria todas; a 1ª segue o formulário e as futuras ficam pendentes', async () => {
+    const a = await newDevice()
+    const rule = await addRecurring(a, 3)
+    const txs = (await a.db.transactions.toArray()).sort((x, y) => x.recurrenceNumber! - y.recurrenceNumber!)
+    expect(txs.map((t) => t.id)).toEqual([`${rule.id}:1`, `${rule.id}:2`, `${rule.id}:3`])
+    expect(txs.map((t) => t.paid)).toEqual([true, false, false])
+    expect(txs.every((t) => t.amount === 150000 && t.description === 'aluguel')).toBe(true)
+    expect(new Set(txs.map((t) => t.month)).size).toBe(3)
+  })
+
+  it('sem data para acabar: lança 12 meses à frente e não recria o que foi apagado', async () => {
+    const a = await newDevice()
+    const rule = await addRecurring(a, undefined)
+    expect(await numbers(a)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+
+    await a.repo.deleteTransaction(`${rule.id}:3`)
+    await a.repo.extendRecurrences()
+    expect(await numbers(a)).toEqual([1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+  })
+
+  it('"este e os próximos" muda os seguintes pendentes e o modelo, sem tocar nos confirmados', async () => {
+    const a = await newDevice()
+    const rule = await addRecurring(a, 4)
+    const second = (await a.db.transactions.get(`${rule.id}:2`))!
+    await a.repo.setPaid((await a.db.transactions.get(`${rule.id}:3`))!, true)
+
+    await a.repo.updateFollowing(second, {
+      type: 'despesa', amount: 180000, categoryId: second.categoryId, subcategoryId: null,
+      paymentMethodId: second.paymentMethodId, description: 'aluguel reajustado', resgate: false,
+    })
+
+    const amounts = Object.fromEntries((await a.db.transactions.toArray()).map((t) => [t.recurrenceNumber, t.amount]))
+    // 1 é anterior; 2 é o próprio (o formulário grava à parte); 3 já estava confirmado; só o 4 muda.
+    expect(amounts).toEqual({ 1: 150000, 2: 150000, 3: 150000, 4: 180000 })
+    expect((await a.db.recurrences.get(rule.id))!.amount).toBe(180000)
+  })
+
+  it('"excluir este e os próximos" apaga daqui em diante e encerra a repetição', async () => {
+    const a = await newDevice()
+    const rule = await addRecurring(a, undefined)
+    await a.repo.endRecurrence(rule.id, 3)
+    expect(await numbers(a)).toEqual([1, 2])
+    await a.repo.extendRecurrences()
+    expect(await numbers(a)).toEqual([1, 2])
+    expect((await a.db.recurrences.get(rule.id))!.ended).toBe(true)
+  })
+
+  it('encerrar pela tela apaga só os futuros pendentes', async () => {
+    const a = await newDevice()
+    const rule = await addRecurring(a, 5)
+    await a.repo.endRecurrence(rule.id)
+    // A 1ª é de hoje (não é futura); as outras quatro eram futuras e pendentes.
+    expect(await numbers(a)).toEqual([1])
+  })
+
+  it('dois aparelhos completando a mesma recorrência não criam lançamentos em dobro', async () => {
+    const a = await newDevice()
+    const rule = await addRecurring(a, undefined)
+    await a.connect('dono')
+    expect(cloud.text).toContain(`${rule.id}:13`)
+
+    const b = await newDevice()
+    await b.connect('convidado')
+    expect(await numbers(b)).toHaveLength(13)
+
+    // Dois meses depois, cada aparelho abre o app sem ter sincronizado antes e completa por conta própria.
+    const later = new Date()
+    later.setMonth(later.getMonth() + 2)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(later)
+    try {
+      await a.repo.extendRecurrences()
+      await b.repo.extendRecurrences()
+      expect(await numbers(a)).toEqual(await numbers(b))
+      expect((await numbers(b)).length).toBeGreaterThan(13)
+
+      await a.engine.syncNow()
+      await b.engine.syncNow()
+      const all = await numbers(b)
+      expect(new Set(all).size).toBe(all.length)
+      expect(await b.db.transactions.count()).toBe(all.length)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

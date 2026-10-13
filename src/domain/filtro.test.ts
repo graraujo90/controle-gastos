@@ -85,6 +85,11 @@ describe('matchesFilter', () => {
     expect(pass(tx(), { parcelado: true })).toBe(false)
   })
 
+  it('só recorrentes', () => {
+    expect(pass(tx({ recurrenceId: 'r1' }), { recorrente: true })).toBe(true)
+    expect(pass(tx(), { recorrente: true })).toBe(false)
+  })
+
   it('critérios se somam', () => {
     const f: TxFilter = { tipo: 'despesa', categoria: 'moradia', forma: 'pix', min: 5000 }
     expect(pass(tx(), f)).toBe(true)
@@ -104,7 +109,7 @@ describe('matchesFilter', () => {
 describe('filtro no endereço', () => {
   const full: TxFilter = {
     tipo: 'despesa', pendencia: 'pagar', situacao: 'atrasado', categoria: 'moradia', subcategoria: NO_SUB,
-    forma: ALL_CREDIT, min: 1000, max: 50000, texto: 'mercado', parcelado: true,
+    forma: ALL_CREDIT, min: 1000, max: 50000, texto: 'mercado', parcelado: true, recorrente: true,
   }
 
   it('o que é gravado volta igual ao ler', () => {

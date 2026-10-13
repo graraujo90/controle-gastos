@@ -1,4 +1,4 @@
-import { BACKUP_APP, BACKUP_TABLES, type BackupTable } from './backup'
+import { BACKUP_APP, BACKUP_TABLES, FILE_FORMAT, type BackupTable } from './backup'
 
 /** Registro de exclusão: impede que algo apagado em um aparelho volte vindo de outro. */
 export interface Deletion {
@@ -35,7 +35,7 @@ export interface SyncFile {
 }
 
 export function serializeSync(file: SyncFile, savedAt: string): string {
-  return JSON.stringify({ app: BACKUP_APP, format: 1, generation: file.generation, savedAt, ...file.data })
+  return JSON.stringify({ app: BACKUP_APP, format: FILE_FORMAT, generation: file.generation, savedAt, ...file.data })
 }
 
 /** Lê o arquivo da nuvem. Lança Error se não for um arquivo de dados deste app. */
@@ -49,7 +49,7 @@ export function parseSync(text: string): SyncFile {
   if (!raw || typeof raw !== 'object' || raw.app !== BACKUP_APP || typeof raw.generation !== 'string') {
     throw new Error('O arquivo encontrado na nuvem não é do Controle de Gastos.')
   }
-  if (raw.format !== 1) throw new Error('Os dados na nuvem são de uma versão mais nova do app. Atualize o app.')
+  if (typeof raw.format !== 'number' || raw.format < 1 || raw.format > FILE_FORMAT) throw new Error('Os dados na nuvem são de uma versão mais nova do app. Atualize o app.')
   const tables = (raw.tables ?? {}) as Partial<Record<BackupTable, unknown>>
   const data = emptySyncData()
   for (const table of BACKUP_TABLES) {

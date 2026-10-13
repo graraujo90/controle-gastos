@@ -3,6 +3,7 @@
 import { BACKUP_TABLES } from '../domain/backup'
 import { mergeData, parseSync, rowKey, serializeSync, type SyncData, type SyncFile } from '../domain/sync'
 import { db } from '../db/db'
+import { extendRecurrences } from '../db/repo'
 import * as onedrive from './onedrive'
 
 export type SyncMode = 'dono' | 'convidado'
@@ -111,6 +112,9 @@ export async function syncNow(): Promise<void> {
     } while (again)
     await saveMeta({ ...meta, lastSyncAt: new Date().toISOString() })
     setState('ok')
+    // Uma recorrência recebida de outro aparelho pode precisar ser completada aqui; o que for criado
+    // dispara nova sincronização pelos gatilhos normais e a segunda passada já não cria nada.
+    void extendRecurrences().catch(() => undefined)
   } catch (error) {
     const step = state.step ? ` (etapa: ${state.step.toLowerCase()})` : ''
     if (error instanceof onedrive.ReconnectError) setState('reconectar', error.message)

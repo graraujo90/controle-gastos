@@ -1,19 +1,26 @@
 /** Tabelas que entram no arquivo de backup, na ordem em que são gravadas. */
-export const BACKUP_TABLES = ['categories', 'paymentMethods', 'transactions', 'budgets', 'settings'] as const
+export const BACKUP_TABLES = ['categories', 'paymentMethods', 'transactions', 'budgets', 'recurrences', 'settings'] as const
 export type BackupTable = (typeof BACKUP_TABLES)[number]
 
 export const BACKUP_APP = 'controle-gastos'
 
+/**
+ * Versão do formato dos arquivos (backup e sincronização). Sobe quando entra uma tabela nova: assim um
+ * aparelho com versão antiga do app recusa o arquivo, em vez de regravá-lo sem os dados que não conhece.
+ * 2 = inclui as recorrências. Arquivos de formato anterior continuam sendo lidos.
+ */
+export const FILE_FORMAT = 2
+
 export interface Backup {
   app: typeof BACKUP_APP
   /** Versão do formato do arquivo. */
-  format: 1
+  format: typeof FILE_FORMAT
   exportedAt: string
   data: Record<BackupTable, unknown[]>
 }
 
 export function buildBackup(data: Record<BackupTable, unknown[]>, exportedAt: string): Backup {
-  return { app: BACKUP_APP, format: 1, exportedAt, data }
+  return { app: BACKUP_APP, format: FILE_FORMAT, exportedAt, data }
 }
 
 /**
@@ -31,7 +38,7 @@ export function parseBackup(text: string): Backup {
   if (!backup || typeof backup !== 'object' || backup.app !== BACKUP_APP || !backup.data) {
     throw new Error('Este arquivo não é um backup do Controle de Gastos.')
   }
-  if (backup.format !== 1) {
+  if (typeof backup.format !== 'number' || backup.format < 1 || backup.format > FILE_FORMAT) {
     throw new Error('Este backup foi feito por uma versão mais nova do app. Atualize o app antes de restaurar.')
   }
   const data = {} as Record<BackupTable, unknown[]>
@@ -43,5 +50,5 @@ export function parseBackup(text: string): Backup {
     data[table] = rows
   }
   if (data.categories.length === 0) throw new Error('O backup está vazio: não há categorias nele.')
-  return { app: BACKUP_APP, format: 1, exportedAt: String(backup.exportedAt ?? ''), data }
+  return { app: BACKUP_APP, format: FILE_FORMAT, exportedAt: String(backup.exportedAt ?? ''), data }
 }

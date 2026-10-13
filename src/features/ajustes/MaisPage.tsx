@@ -1,11 +1,12 @@
 import {
-  Archive, ChartColumn, ChevronRight, Cloud, CreditCard, DatabaseBackup, SunMoon, Tags, Wallet,
+  Archive, ChartColumn, ChevronRight, Cloud, CreditCard, DatabaseBackup, Repeat, SunMoon, Tags, Wallet,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 const READY = [
   { to: '/relatorios', label: 'Relatórios', hint: 'Resumo do mês, gráficos e resumo anual mês a mês', icon: ChartColumn },
   { to: '/cartoes', label: 'Cartões e faturas', hint: 'Fatura do mês, limite usado e próximas faturas', icon: CreditCard },
+  { to: '/mais/recorrencias', label: 'Recorrências', hint: 'Lançamentos que se repetem: ver e encerrar', icon: Repeat },
   { to: '/mais/categorias', label: 'Categorias e subcategorias', hint: 'Receitas, despesas e investimentos', icon: Tags },
   { to: '/mais/formas', label: 'Formas de recebimento e pagamento', hint: 'Contas, Pix, dinheiro e cartões de crédito', icon: Wallet },
   { to: '/mais/arquivados', label: 'Arquivados', hint: 'Restaurar categorias e formas excluídas', icon: Archive },

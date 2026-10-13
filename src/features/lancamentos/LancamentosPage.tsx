@@ -119,6 +119,7 @@ export function LancamentosPage() {
   tag(filter.max !== undefined, `Até ${formatBRL(filter.max ?? 0)}`, { ...filter, max: undefined })
   tag(filter.texto, `"${filter.texto}"`, { ...filter, texto: undefined })
   tag(filter.parcelado, 'Parceladas', { ...filter, parcelado: undefined })
+  tag(filter.recorrente, 'Recorrentes', { ...filter, recorrente: undefined })
 
   const quick = (changes: Pick<TxFilter, 'tipo' | 'pendencia'>) =>
     // Trocar o botão rápido descarta a situação, que poderia contradizê-lo (ex.: "confirmados" com "a pagar").

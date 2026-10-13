@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, Circle } from 'lucide-react'
+import { CircleAlert, CircleCheck, Circle, Repeat } from 'lucide-react'
 import { useApp } from '../../app/AppContext'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { TYPE_STYLE } from '../../components/typeStyle'
@@ -62,7 +62,10 @@ export function TransactionRow({ tx, categories, methods, view, purchase }: Prop
       <button className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left" onClick={() => openForm(tx)}>
         <CategoryIcon category={sub ?? category} parent={sub ? category : undefined} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{title}</span>
+          <span className="flex items-center gap-1.5 font-medium">
+            <span className="truncate">{title}</span>
+            {tx.recurrenceId && <Repeat size={12} className="shrink-0 text-slate-400" aria-label="Recorrente" />}
+          </span>
           <span className="block truncate text-xs text-slate-500">
             {detail}
             {status && (

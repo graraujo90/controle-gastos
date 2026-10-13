@@ -6,10 +6,16 @@ import { Modal } from '../../components/Modal'
 import { MoneyInput } from '../../components/MoneyInput'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
-import { deleteInstallmentGroup, deleteTransaction, saveInstallments, saveTransaction } from '../../db/repo'
+import {
+  deleteInstallmentGroup, deleteTransaction, endRecurrence, saveInstallments, saveRecurring, saveTransaction,
+  updateFollowing,
+} from '../../db/repo'
 import { TX_LABEL, TX_TYPES, type PaymentMethod, type Transaction, type TxType } from '../../db/types'
 import { dueDateFor, isCredit } from '../../domain/fatura'
 import { planInstallments, type InstallmentMode } from '../../domain/parcelas'
+import {
+  FREQUENCIES, FREQUENCY_LABEL, MAX_COUNT, missingOccurrences, occurrenceDate, type Frequency,
+} from '../../domain/recorrencia'
 import { confirmWords } from '../../lib/confirmacao'
 import { addMonthsToDate, formatBRL, monthLabel, monthOf, shortDate, todayISO } from '../../lib/format'
 
@@ -19,6 +25,8 @@ interface Props {
 }
 
 const MAX_INSTALLMENTS = 72
+
+const fullDate = (iso: string) => `${shortDate(iso)}/${iso.slice(0, 4)}`
 
 // Receita e resgate são dinheiro entrando; cartão de crédito só em despesas (é o único tipo que entra em fatura).
 const usable = (m: PaymentMethod, type: TxType, inflow: boolean) =>
@@ -38,6 +46,12 @@ export function TransactionForm({ tx, onClose }: Props) {
   const [paidManual, setPaidManual] = useState<boolean | null>(tx ? tx.paid : null)
   const [count, setCount] = useState('1')
   const [mode, setMode] = useState<InstallmentMode>('total')
+  // Repetição: '' = não repete (padrão). Só ao criar; ao editar, vale a escolha de alcance abaixo.
+  const [repeat, setRepeat] = useState<Frequency | ''>('')
+  const [endless, setEndless] = useState(false)
+  const [times, setTimes] = useState('12')
+  // Ao editar ou excluir um lançamento recorrente: só ele, ou ele e os próximos.
+  const [scope, setScope] = useState<'este' | 'proximos'>('este')
   const [error, setError] = useState('')
 
   const { setMonth } = useApp()
@@ -68,7 +82,16 @@ export function TransactionForm({ tx, onClose }: Props) {
   // Confirmado por padrão quando a data já chegou. Fatura de cartão é marcada como paga inteira,
   // pela lista; aqui só vale o padrão.
   const paid = credit ? (tx?.paid ?? dueDate < todayISO()) : (paidManual ?? dueDate <= todayISO())
-  const installments = expense && !tx ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
+  const repeating = !tx && repeat !== ''
+  // Repetição e parcelamento não se combinam: escolher um esconde o outro.
+  const installments =
+    expense && !tx && !repeating ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
+  const repeatCount = endless ? undefined : Math.max(2, Math.min(MAX_COUNT, Math.floor(Number(times)) || 2))
+  // O que a repetição vai criar agora, para mostrar antes de salvar.
+  const occurrences =
+    repeating && date
+      ? missingOccurrences({ frequency: repeat, startDate: date, count: repeatCount, generated: 0, ended: false }, todayISO())
+      : []
   const plan = installments > 1 && date ? planInstallments(amount, mode, installments, dueDate) : null
 
   function changeType(next: TxType) {
@@ -99,8 +122,15 @@ export function TransactionForm({ tx, onClose }: Props) {
       paid,
       resgate,
     }
-    if (plan) await saveInstallments(base, plan)
+    if (repeating) await saveRecurring({ ...base, amount, dueDate }, { frequency: repeat, count: repeatCount })
+    else if (plan) await saveInstallments(base, plan)
     else await saveTransaction({ ...base, id: tx?.id, amount, dueDate })
+    if (tx?.recurrenceId && scope === 'proximos') {
+      await updateFollowing(tx, {
+        type, amount, categoryId, subcategoryId: base.subcategoryId, paymentMethodId: methodId,
+        description: base.description, resgate,
+      })
+    }
     // Leva a tela para o mês em que o lançamento entrou (o do vencimento).
     setMonth(monthOf(dueDate))
     onClose()
@@ -108,7 +138,10 @@ export function TransactionForm({ tx, onClose }: Props) {
 
   async function remove(all: boolean) {
     if (!tx) return
-    if (all && tx.installmentGroupId) {
+    if (tx.recurrenceId && scope === 'proximos') {
+      if (!confirm('Excluir este lançamento e os próximos?\n\nA repetição será encerrada.')) return
+      await endRecurrence(tx.recurrenceId, tx.recurrenceNumber)
+    } else if (all && tx.installmentGroupId) {
       if (!confirm(`Excluir todas as ${tx.installmentTotal} parcelas desta compra?`)) return
       await deleteInstallmentGroup(tx.installmentGroupId)
     } else {
@@ -156,6 +189,33 @@ export function TransactionForm({ tx, onClose }: Props) {
               <p className="mt-1 text-xs text-slate-500">
                 O valor resgatado volta para o resultado do mês e abate do total investido. Lance à parte a despesa
                 que ele cobriu.
+              </p>
+            )}
+          </div>
+        )}
+
+        {tx?.recurrenceId && (
+          <div className="space-y-2 rounded-lg bg-slate-100 px-3 py-2">
+            <p className="text-sm text-slate-600">
+              Lançamento recorrente (nº {tx.recurrenceNumber}). Salvar ou excluir vale para:
+            </p>
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-200/60 p-1">
+              {(['este', 'proximos'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setScope(value)}
+                  aria-pressed={scope === value}
+                  className={`rounded-md py-1.5 text-sm font-semibold ${scope === value ? 'seg-on' : 'text-slate-500'}`}
+                >
+                  {value === 'este' ? 'Só este' : 'Este e os próximos'}
+                </button>
+              ))}
+            </div>
+            {scope === 'proximos' && (
+              <p className="text-xs text-slate-500">
+                Valor, categoria, forma e descrição passam a valer também para os próximos ainda não confirmados. As
+                datas deles não mudam.
               </p>
             )}
           </div>
@@ -232,7 +292,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           )}
         </div>
 
-        {expense && !tx && (
+        {expense && !tx && !repeating && (
           <div className="space-y-2">
             <div className="flex items-end gap-3">
               <div className="w-28 shrink-0">
@@ -279,10 +339,70 @@ export function TransactionForm({ tx, onClose }: Props) {
           </div>
         )}
 
+        {!tx && installments === 1 && (
+          <div className="space-y-2">
+            <div>
+              <label className="label" htmlFor="tx-repetir">Repetir</label>
+              <select id="tx-repetir" className="field" value={repeat} onChange={(e) => setRepeat(e.target.value as Frequency | '')}>
+                <option value="">Não repete</option>
+                {FREQUENCIES.map((f) => (
+                  <option key={f} value={f}>{FREQUENCY_LABEL[f]}</option>
+                ))}
+              </select>
+            </div>
+            {repeating && (
+              <>
+                <div className="flex items-end gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="label">Termina</span>
+                    <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+                      {([false, true] as const).map((value) => (
+                        <button
+                          key={String(value)}
+                          type="button"
+                          onClick={() => setEndless(value)}
+                          aria-pressed={endless === value}
+                          className={`rounded-md py-1.5 text-sm font-semibold ${endless === value ? 'seg-on' : 'text-slate-500'}`}
+                        >
+                          {value ? 'Sem data' : 'Após N vezes'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {!endless && (
+                    <div className="w-24 shrink-0">
+                      <label className="label" htmlFor="tx-vezes">Vezes</label>
+                      <input
+                        id="tx-vezes"
+                        type="number"
+                        min={2}
+                        max={MAX_COUNT}
+                        className="field"
+                        value={times}
+                        onChange={(e) => setTimes(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+                {occurrences.length > 0 && (
+                  <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600">
+                    {endless ? 'Sem data para acabar. Já ficam lançados ' : 'Serão criados '}
+                    <strong>{occurrences.length} lançamentos</strong> de <strong>{formatBRL(amount)}</strong>, de{' '}
+                    {fullDate(date)} a {fullDate(occurrenceDate(date, repeat, occurrences[occurrences.length - 1]))}
+                    {endless && ', e o app completa os próximos sozinho'}. Os futuros entram como pendentes.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {expense && !credit && (
           <div className="flex items-end gap-3">
             <div className="min-w-0 flex-1">
-              <label className="label" htmlFor="tx-venc">{plan ? 'Vencimento da 1ª parcela' : 'Vencimento'}</label>
+              <label className="label" htmlFor="tx-venc">
+                {plan ? 'Vencimento da 1ª parcela' : repeating ? 'Vencimento do 1º' : 'Vencimento'}
+              </label>
               <input
                 id="tx-venc"
                 type="date"
@@ -298,7 +418,7 @@ export function TransactionForm({ tx, onClose }: Props) {
                 checked={paid}
                 onChange={(e) => setPaidManual(e.target.checked)}
               />
-              {plan ? '1ª parcela já paga' : 'Já paga'}
+              {plan ? '1ª parcela já paga' : repeating ? '1º já pago' : 'Já paga'}
             </label>
           </div>
         )}
@@ -311,7 +431,7 @@ export function TransactionForm({ tx, onClose }: Props) {
               checked={paid}
               onChange={(e) => setPaidManual(e.target.checked)}
             />
-            {confirmWords({ type, resgate }).checkbox}
+            {repeating ? `1º: ${confirmWords({ type, resgate }).checkbox.toLowerCase()}` : confirmWords({ type, resgate }).checkbox}
           </label>
         )}
 

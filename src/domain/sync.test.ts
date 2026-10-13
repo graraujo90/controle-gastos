@@ -24,6 +24,13 @@ describe('arquivo da nuvem', () => {
     expect(parseSync(serializeSync(file, T3))).toEqual(file)
   })
 
+  it('lê arquivo do formato anterior e recusa o de uma versão mais nova do app', () => {
+    const file = { generation: 'g1', data: data([tx('a', T1)]) }
+    const older = JSON.parse(serializeSync(file, T3))
+    expect(parseSync(JSON.stringify({ ...older, format: 1 })).data.tables.transactions).toEqual([tx('a', T1)])
+    expect(() => parseSync(JSON.stringify({ ...older, format: 99 }))).toThrow(/versão mais nova/)
+  })
+
   it('recusa arquivo de outra origem ou ilegível', () => {
     expect(() => parseSync('{"foo":1}')).toThrow(/não é do Controle de Gastos/)
     expect(() => parseSync('<html>')).toThrow(/ilegível/)

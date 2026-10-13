@@ -6,6 +6,7 @@ const data = {
   paymentMethods: [{ id: 'm1', name: 'Pix' }],
   transactions: [{ id: 't1', amount: 1000 }],
   budgets: [],
+  recurrences: [{ id: 'r1', frequency: 'mensal' }],
   settings: [{ key: 'saldoInicial', value: 5000 }],
 }
 
@@ -26,6 +27,13 @@ describe('backup', () => {
     expect(Object.keys(parseBackup(text).data)).not.toContain('balances')
   })
 
+  it('lê backup do formato anterior, sem recorrências', () => {
+    const { recurrences: _omit, ...older } = data
+    const text = JSON.stringify({ app: 'controle-gastos', format: 1, exportedAt: '', data: older })
+    expect(parseBackup(text).data.recurrences).toEqual([])
+    expect(parseBackup(text).data.transactions).toEqual(data.transactions)
+  })
+
   it('recusa arquivo que não é JSON', () => {
     expect(() => parseBackup('não é json')).toThrow(/não é um backup válido/)
   })
@@ -36,7 +44,7 @@ describe('backup', () => {
   })
 
   it('recusa formato mais novo', () => {
-    const text = JSON.stringify({ ...buildBackup(data, ''), format: 2 })
+    const text = JSON.stringify({ ...buildBackup(data, ''), format: 99 })
     expect(() => parseBackup(text)).toThrow(/versão mais nova/)
   })
 

@@ -27,6 +27,8 @@ export interface TxFilter {
   texto?: string
   /** Só compras parceladas. */
   parcelado?: boolean
+  /** Só lançamentos criados por uma recorrência. */
+  recorrente?: boolean
 }
 
 const PENDING: PendingKind[] = ['pagar', 'receber', 'investir']
@@ -52,6 +54,7 @@ export function parseFilter(params: URLSearchParams): TxFilter {
     max: cents(params.get('max')),
     texto: params.get('q')?.trim() || undefined,
     parcelado: params.get('parc') === '1' || undefined,
+    recorrente: params.get('rec') === '1' || undefined,
   }
 }
 
@@ -70,6 +73,7 @@ export function filterToParams(filter: TxFilter, period: Period = 'mes'): URLSea
     ['max', filter.max],
     ['q', filter.texto?.trim()],
     ['parc', filter.parcelado ? '1' : undefined],
+    ['rec', filter.recorrente ? '1' : undefined],
   ]
   const params = new URLSearchParams()
   for (const [key, value] of entries) if (value !== undefined && value !== '') params.set(key, String(value))
@@ -95,7 +99,7 @@ export interface FilterContext {
 
 type Filterable = Pick<
   Transaction,
-  'type' | 'resgate' | 'paid' | 'dueDate' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'installmentGroupId'
+  'type' | 'resgate' | 'paid' | 'dueDate' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'installmentGroupId' | 'recurrenceId'
 >
 
 const plain = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -125,6 +129,7 @@ export function matchesFilter(
   if (filter.min !== undefined && shown.amount < filter.min) return false
   if (filter.max !== undefined && shown.amount > filter.max) return false
   if (filter.parcelado && !tx.installmentGroupId) return false
+  if (filter.recorrente && !tx.recurrenceId) return false
   if (filter.texto) {
     const haystack = [tx.description, ctx.categoryNames.get(tx.categoryId), tx.subcategoryId && ctx.categoryNames.get(tx.subcategoryId)]
     if (!plain(haystack.filter(Boolean).join(' ')).includes(plain(filter.texto))) return false

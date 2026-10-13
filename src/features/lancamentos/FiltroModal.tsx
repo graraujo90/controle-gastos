@@ -151,6 +151,16 @@ export function FiltroModal({ filter, categories, methods, onApply, onClose }: P
           Só compras parceladas
         </label>
 
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            className="h-5 w-5 accent-emerald-600"
+            checked={!!draft.recorrente}
+            onChange={(e) => set({ recorrente: e.target.checked || undefined })}
+          />
+          Só lançamentos recorrentes
+        </label>
+
         <div className="flex gap-2 pt-2">
           <button type="button" className="btn btn-ghost" onClick={() => onApply({})}>Limpar tudo</button>
           <button type="submit" className="btn btn-primary ml-auto flex-1 sm:flex-none">Aplicar</button>

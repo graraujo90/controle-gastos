@@ -44,6 +44,13 @@ export function withDay(month: string, day: number): string {
 export const addMonthsToDate = (dateISO: string, n: number) =>
   withDay(addMonths(monthOf(dateISO), n), Number(dateISO.slice(8, 10)))
 
+/** Soma dias a uma data 'AAAA-MM-DD'. */
+export function addDays(dateISO: string, days: number): string {
+  const [y, m, d] = dateISO.split('-').map(Number)
+  // Em UTC, para o horário de verão não comer nem repetir um dia.
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
+}
+
 /** 'AAAA-MM-DD' -> 'DD/MM' */
 export const shortDate = (dateISO: string) => `${dateISO.slice(8, 10)}/${dateISO.slice(5, 7)}`
 

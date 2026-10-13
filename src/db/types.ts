@@ -78,9 +78,38 @@ export interface Transaction extends Base {
   paymentMethodId: string
   /** Só em investimentos: true quando é um resgate (dinheiro saindo do investimento) em vez de aporte. */
   resgate?: boolean
+  /** Lançamento criado por uma recorrência: a regra e o número da ocorrência. */
+  recurrenceId?: string
+  recurrenceNumber?: number
   installmentGroupId?: string
   installmentNumber?: number
   installmentTotal?: number
+}
+
+/**
+ * Regra de um lançamento que se repete. Os lançamentos em si são criados de verdade (um por
+ * ocorrência, com `recurrenceId`); a regra guarda o modelo para criar os próximos.
+ */
+export interface Recurrence extends Base {
+  frequency: 'semanal' | 'quinzenal' | 'mensal'
+  /** Data da 1ª ocorrência. */
+  startDate: string
+  /** Vencimento da 1ª ocorrência, quando difere da data (não se aplica a cartão de crédito). */
+  startDueDate?: string
+  /** Número de vezes; ausente = sem data para acabar. */
+  count?: number
+  /** Quantas ocorrências já foram criadas. Só cresce: o que foi apagado não é recriado. */
+  generated: number
+  /** Encerrada: nenhuma ocorrência nova é criada. */
+  ended: boolean
+  // Modelo das próximas ocorrências.
+  type: TxType
+  amount: number
+  categoryId: string
+  subcategoryId: string | null
+  paymentMethodId: string
+  description: string
+  resgate?: boolean
 }
 
 export interface Budget extends Base {
