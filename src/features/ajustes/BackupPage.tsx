@@ -4,6 +4,7 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import { db } from '../../db/db'
 import { exportAll, importAll, LAST_BACKUP, resetAll } from '../../db/repo'
 import { parseBackup } from '../../domain/backup'
+import { disconnect, isConnected, replaceRemote } from '../../sync/engine'
 import { BackLink } from './BackLink'
 
 const dateTime = (iso: string) =>
@@ -34,8 +35,12 @@ export function BackupPage() {
       const backup = parseBackup(await file.text())
       const when = backup.exportedAt ? ` de ${dateTime(backup.exportedAt)}` : ''
       const total = backup.data.transactions.length
-      if (!confirm(`Restaurar o backup${when}, com ${total} lançamentos?\n\nTodos os dados atuais deste aparelho serão substituídos.`)) return
+      const scope = isConnected()
+        ? 'Todos os dados atuais serão substituídos, neste aparelho, no OneDrive e nos outros aparelhos conectados.'
+        : 'Todos os dados atuais deste aparelho serão substituídos.'
+      if (!confirm(`Restaurar o backup${when}, com ${total} lançamentos?\n\n${scope}`)) return
       await importAll(backup)
+      await replaceRemote()
       setMessage({ ok: true, text: `Backup restaurado: ${total} lançamentos.` })
     } catch (error) {
       setMessage({ ok: false, text: error instanceof Error ? error.message : 'Não foi possível restaurar o backup.' })
@@ -44,8 +49,16 @@ export function BackupPage() {
 
   async function reset() {
     if (!confirm('Apagar TODOS os lançamentos, categorias, formas, orçamentos e saldos deste aparelho?\n\nIsso não pode ser desfeito. Faça um backup antes se tiver dúvida.')) return
+    // Apagar é só neste aparelho: desconecta antes, senão a sincronização traria tudo de volta.
+    const wasConnected = isConnected()
+    await disconnect()
     await resetAll()
-    setMessage({ ok: true, text: 'Dados apagados. O app voltou aos cadastros iniciais.' })
+    setMessage({
+      ok: true,
+      text: wasConnected
+        ? 'Dados apagados neste aparelho, que foi desconectado da sincronização. O que está no OneDrive não foi alterado.'
+        : 'Dados apagados. O app voltou aos cadastros iniciais.',
+    })
   }
 
   return (

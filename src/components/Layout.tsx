@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AppContext, type AppState } from '../app/AppContext'
 import type { Transaction } from '../db/types'
+import { SyncBadge } from './SyncBadge'
 import { TransactionForm } from '../features/lancamentos/TransactionForm'
 import { currentMonth } from '../lib/format'
 
@@ -49,9 +50,11 @@ export function Layout() {
           <button className="btn btn-primary mt-4" onClick={() => setForm({})}>
             <Plus size={18} /> Novo lançamento
           </button>
+          <SyncBadge className="mt-auto px-2" />
         </aside>
 
         <main className="min-w-0 flex-1 p-4 pb-28 md:p-8">
+          <SyncBadge className="mb-2 justify-end md:hidden" />
           <Outlet />
         </main>
       </div>

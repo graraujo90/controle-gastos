@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { emptySyncData, mergeData, type Deletion, type Row, type SyncData } from './sync'
+import {
+  emptySyncData, mergeData, parseSync, serializeSync, type Deletion, type Row, type SyncData,
+} from './sync'
 
 const T1 = '2026-10-13T10:00:00.000Z'
 const T2 = '2026-10-13T11:00:00.000Z'
@@ -15,6 +17,18 @@ function data(transactions: Row[], deletions: Deletion[] = [], settings: Row[] =
 const tx = (id: string, updatedAt: string, amount = 100): Row => ({ id, updatedAt, amount })
 const ids = (d: SyncData) => d.tables.transactions.map((r) => r.id).sort()
 const del = (id: string, deletedAt: string): Deletion => ({ table: 'transactions', id, deletedAt })
+
+describe('arquivo da nuvem', () => {
+  it('o que é gravado volta igual ao ler', () => {
+    const file = { generation: 'g1', data: data([tx('a', T1)], [del('b', T2)], [{ key: 'k', value: 1, updatedAt: T1 }]) }
+    expect(parseSync(serializeSync(file, T3))).toEqual(file)
+  })
+
+  it('recusa arquivo de outra origem ou ilegível', () => {
+    expect(() => parseSync('{"foo":1}')).toThrow(/não é do Controle de Gastos/)
+    expect(() => parseSync('<html>')).toThrow(/ilegível/)
+  })
+})
 
 describe('mergeData', () => {
   it('lançamentos feitos em aparelhos diferentes: os dois entram', () => {

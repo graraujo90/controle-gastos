@@ -1,4 +1,4 @@
-import { Archive, ChevronRight, CreditCard, DatabaseBackup, Tags, TrendingUp, Wallet } from 'lucide-react'
+import { Archive, ChevronRight, Cloud, CreditCard, DatabaseBackup, Tags, TrendingUp, Wallet } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 const READY = [
@@ -7,6 +7,7 @@ const READY = [
   { to: '/mais/categorias', label: 'Categorias e subcategorias', hint: 'Receitas, despesas e investimentos', icon: Tags },
   { to: '/mais/formas', label: 'Formas de recebimento e pagamento', hint: 'Contas, Pix, dinheiro e cartões de crédito', icon: Wallet },
   { to: '/mais/arquivados', label: 'Arquivados', hint: 'Restaurar categorias e formas excluídas', icon: Archive },
+  { to: '/mais/sincronizacao', label: 'Sincronização', hint: 'Mesmos dados em todos os aparelhos, pelo OneDrive', icon: Cloud },
   { to: '/mais/backup', label: 'Backup dos dados', hint: 'Salvar em arquivo, restaurar ou apagar tudo', icon: DatabaseBackup },
 ]
 

@@ -1,4 +1,4 @@
-import { BACKUP_TABLES, type BackupTable } from './backup'
+import { BACKUP_APP, BACKUP_TABLES, type BackupTable } from './backup'
 
 /** Registro de exclusão: impede que algo apagado em um aparelho volte vindo de outro. */
 export interface Deletion {
@@ -23,7 +23,45 @@ export interface MergeResult {
   remoteChanged: boolean
 }
 
-export const rowKey = (row: Row) => String(row.id ?? row.key)
+/** Conteúdo do arquivo guardado na nuvem. */
+export interface SyncFile {
+  /**
+   * Identifica a "linhagem" dos dados. Muda quando alguém substitui tudo de propósito (restaurar backup,
+   * enviar os dados de um aparelho por cima). Aparelho que encontra uma geração diferente da sua
+   * adota o conteúdo da nuvem em vez de juntar, para o conteúdo antigo não voltar.
+   */
+  generation: string
+  data: SyncData
+}
+
+export function serializeSync(file: SyncFile, savedAt: string): string {
+  return JSON.stringify({ app: BACKUP_APP, format: 1, generation: file.generation, savedAt, ...file.data })
+}
+
+/** Lê o arquivo da nuvem. Lança Error se não for um arquivo de dados deste app. */
+export function parseSync(text: string): SyncFile {
+  let raw: Record<string, unknown> | null
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    throw new Error('O arquivo de dados na nuvem está ilegível.')
+  }
+  if (!raw || typeof raw !== 'object' || raw.app !== BACKUP_APP || typeof raw.generation !== 'string') {
+    throw new Error('O arquivo encontrado na nuvem não é do Controle de Gastos.')
+  }
+  if (raw.format !== 1) throw new Error('Os dados na nuvem são de uma versão mais nova do app. Atualize o app.')
+  const tables = (raw.tables ?? {}) as Partial<Record<BackupTable, unknown>>
+  const data = emptySyncData()
+  for (const table of BACKUP_TABLES) {
+    const rows = tables[table] ?? []
+    if (!Array.isArray(rows)) throw new Error(`O arquivo de dados na nuvem está corrompido (tabela "${table}").`)
+    data.tables[table] = rows as Row[]
+  }
+  data.deletions = Array.isArray(raw.deletions) ? (raw.deletions as Deletion[]) : []
+  return { generation: raw.generation, data }
+}
+
+export const rowKey =(row: Row) => String(row.id ?? row.key)
 const stamp = (row: Row | undefined) => row?.updatedAt ?? ''
 const deletionKey = (d: Pick<Deletion, 'table' | 'id'>) => `${d.table}:${d.id}`
 
