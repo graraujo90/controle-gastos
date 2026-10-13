@@ -10,6 +10,7 @@ import { deleteInstallmentGroup, deleteTransaction, saveInstallments, saveTransa
 import { TX_LABEL, TX_TYPES, type PaymentMethod, type Transaction, type TxType } from '../../db/types'
 import { dueDateFor, isCredit } from '../../domain/fatura'
 import { planInstallments, type InstallmentMode } from '../../domain/parcelas'
+import { confirmWords } from '../../lib/confirmacao'
 import { addMonthsToDate, formatBRL, monthLabel, monthOf, shortDate, todayISO } from '../../lib/format'
 
 interface Props {
@@ -64,8 +65,9 @@ export function TransactionForm({ tx, onClose }: Props) {
     : credit
       ? addMonthsToDate(dueDateFor(date, method), (tx?.installmentNumber ?? 1) - 1)
       : (dueManual ?? date)
-  // Fatura de cartão é marcada como paga inteira, pela lista; aqui só vale o padrão.
-  const paid = !expense || (credit ? (tx?.paid ?? dueDate < todayISO()) : (paidManual ?? dueDate <= todayISO()))
+  // Confirmado por padrão quando a data já chegou. Fatura de cartão é marcada como paga inteira,
+  // pela lista; aqui só vale o padrão.
+  const paid = credit ? (tx?.paid ?? dueDate < todayISO()) : (paidManual ?? dueDate <= todayISO())
   const installments = expense && !tx ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
   const plan = installments > 1 && date ? planInstallments(amount, mode, installments, dueDate) : null
 
@@ -299,6 +301,18 @@ export function TransactionForm({ tx, onClose }: Props) {
               {plan ? '1ª parcela já paga' : 'Já paga'}
             </label>
           </div>
+        )}
+
+        {!expense && (
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-emerald-600"
+              checked={paid}
+              onChange={(e) => setPaidManual(e.target.checked)}
+            />
+            {confirmWords({ type, resgate }).checkbox}
+          </label>
         )}
 
         <div>

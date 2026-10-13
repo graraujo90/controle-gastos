@@ -65,7 +65,7 @@ export interface Transaction extends Base {
   dueDate: string
   /** Mês de competência, 'AAAA-MM': sempre o mês do vencimento. */
   month: string
-  /** Só tem significado em despesas; receitas e investimentos ficam sempre true. */
+  /** Confirmado: despesa paga, receita recebida, investimento aplicado ou resgatado. Pendente conta como previsto. */
   paid: boolean
   /** Centavos, sempre positivo. */
   amount: number

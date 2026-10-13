@@ -11,7 +11,24 @@ export interface Payables {
   monthTotal: number
 }
 
-/** Resumo das despesas ainda não pagas. `unpaid` deve conter só despesas com paid = false. */
+/** Para onde vai o dinheiro de um lançamento ainda não confirmado. */
+export type PendingKind = 'pagar' | 'receber' | 'investir'
+
+/** Resgate é dinheiro voltando do investimento, então pendente ele entra em "a receber". */
+export const pendingKind = (t: Pick<Transaction, 'type' | 'resgate'>): PendingKind =>
+  t.type === 'despesa' ? 'pagar' : t.type === 'receita' || t.resgate ? 'receber' : 'investir'
+
+/** Pendências separadas por direção do dinheiro. `pending` deve conter só lançamentos com paid = false. */
+export function pendingByKind(
+  pending: Pick<Transaction, 'type' | 'resgate' | 'amount' | 'dueDate'>[],
+  today: string,
+  month: string,
+): Record<PendingKind, Payables> {
+  const of = (kind: PendingKind) => payables(pending.filter((t) => pendingKind(t) === kind), today, month)
+  return { pagar: of('pagar'), receber: of('receber'), investir: of('investir') }
+}
+
+/** Resumo de lançamentos ainda não confirmados. `unpaid` deve conter só lançamentos com paid = false. */
 export function payables(
   unpaid: Pick<Transaction, 'amount' | 'dueDate'>[],
   today: string,

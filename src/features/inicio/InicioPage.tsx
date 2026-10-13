@@ -4,7 +4,7 @@ import { useApp } from '../../app/AppContext'
 import { MonthPicker } from '../../components/MonthPicker'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
-import { payables } from '../../domain/contas'
+import { pendingByKind } from '../../domain/contas'
 import { budgetLevel } from '../../domain/orcamento'
 import { summarize, totalsByCategory } from '../../domain/resumo'
 import { formatBRL, todayISO } from '../../lib/format'
@@ -24,10 +24,15 @@ export function InicioPage() {
   const budget = useBudget(month)
   const over = budget.rows.filter((r) => r.level === 'estourado').length
 
-  // Atrasadas e de hoje independem do mês em exibição; "a pagar no mês" segue o seletor.
+  // O resultado do mês conta tudo que foi lançado (previsto); o realizado considera só o já confirmado.
+  const realized = summarize(transactions.filter((t) => t.paid)).resultado
+  const hasPending = transactions.some((t) => !t.paid)
+
+  // Atrasados e de hoje independem do mês em exibição; os totais "no mês" seguem o seletor.
   const today = todayISO()
-  const unpaid = useLiveQuery(() => db.transactions.filter((t) => t.type === 'despesa' && !t.paid).toArray(), []) ?? []
-  const bills = payables(unpaid, today, month)
+  const unpaid = useLiveQuery(() => db.transactions.filter((t) => !t.paid).toArray(), []) ?? []
+  const pending = pendingByKind(unpaid, today, month)
+  const bills = pending.pagar
   const overdue = unpaid.filter((t) => t.dueDate < today).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
 
   return (
@@ -40,6 +45,14 @@ export function InicioPage() {
           {formatBRL(summary.resultado)}
         </div>
         <div className="mt-1 text-xs text-slate-500">Receitas − despesas − investimentos</div>
+        {hasPending && (
+          <div className="mt-3 flex items-baseline justify-between border-t border-slate-100 pt-3 text-sm">
+            <span className="text-slate-500">Realizado até agora</span>
+            <span className={`font-semibold tabular-nums ${realized < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+              {formatBRL(realized)}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
@@ -83,7 +96,7 @@ export function InicioPage() {
       )}
 
       <section className="card p-4">
-        <h2 className="mb-3 font-semibold">Contas a pagar</h2>
+        <h2 className="mb-3 font-semibold">Pendências</h2>
         <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {(
             [
@@ -97,6 +110,22 @@ export function InicioPage() {
               <div className={`truncate text-sm font-bold tabular-nums sm:text-lg ${color}`}>{formatBRL(total)}</div>
               <div className="text-xs text-slate-500">
                 {count} {count === 1 ? 'despesa' : 'despesas'}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 sm:gap-4">
+          {(
+            [
+              ['A receber no mês', pending.receber],
+              ['A investir no mês', pending.investir],
+            ] as const
+          ).map(([label, p]) => (
+            <div key={label}>
+              <div className="text-xs font-medium text-slate-500">{label}</div>
+              <div className="truncate text-sm font-bold tabular-nums sm:text-lg">{formatBRL(p.monthTotal)}</div>
+              <div className="text-xs text-slate-500">
+                {p.monthCount} {p.monthCount === 1 ? 'lançamento' : 'lançamentos'}
               </div>
             </div>
           ))}

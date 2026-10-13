@@ -2,17 +2,26 @@ import { useState } from 'react'
 import { useApp } from '../../app/AppContext'
 import { MonthPicker } from '../../components/MonthPicker'
 import { TX_LABEL_PLURAL, TX_TYPES, type Transaction, type TxType } from '../../db/types'
+import { pendingKind, type PendingKind } from '../../domain/contas'
 import { dayLabel } from '../../lib/format'
 import { TransactionRow } from './TransactionRow'
 import { useMonthData } from './useMonthData'
 
+type Filter = 'todos' | TxType | PendingKind
+
+const PENDING_LABEL: Record<PendingKind, string> = {
+  pagar: 'A pagar',
+  receber: 'A receber',
+  investir: 'A investir',
+}
+
 export function LancamentosPage() {
   const { month, openForm } = useApp()
   const { transactions, categories, methods, loading } = useMonthData(month)
-  const [filter, setFilter] = useState<TxType | 'todos' | 'apagar'>('todos')
+  const [filter, setFilter] = useState<Filter>('todos')
 
   const visible = transactions.filter((t) =>
-    filter === 'todos' ? true : filter === 'apagar' ? t.type === 'despesa' && !t.paid : t.type === filter,
+    filter === 'todos' ? true : filter in PENDING_LABEL ? !t.paid && pendingKind(t) === filter : t.type === filter,
   )
   // Agrupa pelo vencimento, que é o que define o mês do lançamento (parcelas, faturas).
   const byDay = new Map<string, Transaction[]>()
@@ -25,7 +34,7 @@ export function LancamentosPage() {
       <MonthPicker />
 
       <div className="flex gap-2 overflow-x-auto">
-        {(['todos', ...TX_TYPES, 'apagar'] as const).map((f) => (
+        {(['todos', ...TX_TYPES, 'pagar', 'receber', 'investir'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -33,14 +42,18 @@ export function LancamentosPage() {
               filter === f ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200'
             }`}
           >
-            {f === 'todos' ? 'Todos' : f === 'apagar' ? 'A pagar' : TX_LABEL_PLURAL[f]}
+            {f === 'todos' ? 'Todos' : f in PENDING_LABEL ? PENDING_LABEL[f as PendingKind] : TX_LABEL_PLURAL[f as TxType]}
           </button>
         ))}
       </div>
 
       {!loading && visible.length === 0 && (
         <div className="card p-8 text-center text-slate-500">
-          <p>{filter === 'apagar' ? 'Nada a pagar neste mês.' : 'Nenhum lançamento neste mês.'}</p>
+          <p>
+            {filter in PENDING_LABEL
+              ? `Nada ${PENDING_LABEL[filter as PendingKind].toLowerCase()} neste mês.`
+              : 'Nenhum lançamento neste mês.'}
+          </p>
           <button className="btn btn-primary mt-4" onClick={() => openForm()}>Fazer um lançamento</button>
         </div>
       )}

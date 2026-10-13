@@ -3,6 +3,7 @@ import { useApp } from '../../app/AppContext'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { setPaid } from '../../db/repo'
 import type { Category, PaymentMethod, Transaction } from '../../db/types'
+import { confirmWords } from '../../lib/confirmacao'
 import { formatBRL, shortDate, todayISO } from '../../lib/format'
 
 interface Props {
@@ -20,13 +21,15 @@ export function TransactionRow({ tx, categories, methods }: Props) {
   const name = tx.description || sub?.name || category?.name || '—'
   const title = tx.installmentTotal ? `${name} (${tx.installmentNumber}/${tx.installmentTotal})` : name
 
-  const expense = tx.type === 'despesa'
-  const overdue = expense && !tx.paid && tx.dueDate < todayISO()
-  const status = !expense || tx.paid ? undefined : overdue ? `atrasada desde ${shortDate(tx.dueDate)}` : `vence ${shortDate(tx.dueDate)}`
+  const words = confirmWords(tx)
+  const overdue = !tx.paid && tx.dueDate < todayISO()
+  const status = tx.paid ? undefined : `${overdue ? words.overdue : words.upcoming} ${shortDate(tx.dueDate)}`
   const detail = [tx.resgate ? 'Resgate' : undefined, category?.name, sub?.name, method?.name]
     .filter((part) => part && part !== name)
     .join(' · ')
-  const target = method?.kind === 'credito' ? 'fatura' : 'despesa'
+  // No cartão de crédito a confirmação vale para a fatura inteira.
+  const credit = method?.kind === 'credito'
+  const action = credit ? (tx.paid ? 'Marcar fatura como não paga' : 'Marcar fatura como paga') : tx.paid ? words.undo : words.confirm
 
   return (
     <div className="flex items-center hover:bg-slate-50">
@@ -49,24 +52,15 @@ export function TransactionRow({ tx, categories, methods }: Props) {
           {formatBRL(tx.amount)}
         </span>
       </button>
-      {expense ? (
-        <button
-          className="shrink-0 p-3"
-          onClick={() => setPaid(tx, !tx.paid)}
-          title={tx.paid ? `Paga — marcar ${target} como não paga` : `Marcar ${target} como paga`}
-          aria-label={tx.paid ? `Marcar ${target} como não paga` : `Marcar ${target} como paga`}
-        >
-          {tx.paid ? (
-            <CircleCheck size={22} className="text-emerald-600" />
-          ) : overdue ? (
-            <CircleAlert size={22} className="text-rose-600" />
-          ) : (
-            <Circle size={22} className="text-slate-300" />
-          )}
-        </button>
-      ) : (
-        <span className="w-4 shrink-0" />
-      )}
+      <button className="shrink-0 p-3" onClick={() => setPaid(tx, !tx.paid)} title={action} aria-label={action}>
+        {tx.paid ? (
+          <CircleCheck size={22} className="text-emerald-600" />
+        ) : overdue ? (
+          <CircleAlert size={22} className="text-rose-600" />
+        ) : (
+          <Circle size={22} className="text-slate-300" />
+        )}
+      </button>
     </div>
   )
 }
