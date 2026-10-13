@@ -36,13 +36,11 @@ export async function saveCategory(input: Input<Category>): Promise<string> {
 
 /** Exclui a categoria; se já houver lançamentos nela (ou nas subcategorias), apenas arquiva. */
 export async function removeCategory(id: string): Promise<'excluida' | 'arquivada'> {
-  return db.transaction('rw', [db.categories, db.transactions, db.budgets, db.balances, db.deletions], async () => {
+  return db.transaction('rw', [db.categories, db.transactions, db.budgets, db.deletions], async () => {
     const subIds = (await db.categories.where('parentId').equals(id).toArray()).map((c) => c.id)
-    // Saldo de investimento informado também conta como uso.
     const used =
       (await db.transactions.where('categoryId').equals(id).count()) +
-      (await db.transactions.where('subcategoryId').equals(id).count()) +
-      (await db.balances.filter((b) => b.categoryId === id || b.subcategoryId === id).count())
+      (await db.transactions.where('subcategoryId').equals(id).count())
     if (used > 0) {
       await db.categories.update(id, { archived: true, updatedAt: now() })
       return 'arquivada'
@@ -87,30 +85,6 @@ export async function removeMethod(id: string): Promise<'excluida' | 'arquivada'
 
 export const restoreMethod = (id: string) =>
   db.paymentMethods.update(id, { archived: false, updatedAt: now() })
-
-/** Registra o saldo de um investimento em uma data; informar de novo na mesma data substitui. */
-export async function saveBalance(
-  categoryId: string,
-  subcategoryId: string | null,
-  date: string,
-  amount: number,
-): Promise<void> {
-  await db.transaction('rw', db.balances, async () => {
-    const existing = await db.balances
-      .where('categoryId')
-      .equals(categoryId)
-      .filter((b) => b.date === date && (b.subcategoryId ?? null) === subcategoryId)
-      .first()
-    if (existing) await db.balances.update(existing.id, { amount, updatedAt: now() })
-    else {
-      // Id previsível: dois aparelhos que informem o saldo da mesma data geram o mesmo registro, não dois.
-      const id = `${categoryId}:${subcategoryId ?? ''}:${date}`
-      await db.balances.put({ id, categoryId, subcategoryId, date, amount, createdAt: now(), updatedAt: now() })
-    }
-  })
-}
-
-export const deleteBalance = (id: string) => remove('balances', [id])
 
 export const LAST_BACKUP = 'ultimoBackup'
 

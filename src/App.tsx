@@ -16,9 +16,6 @@ import { OrcamentoPage } from './features/orcamento/OrcamentoPage'
 const RelatoriosPage = lazy(() =>
   import('./features/relatorios/RelatoriosPage').then((m) => ({ default: m.RelatoriosPage })),
 )
-const InvestimentosPage = lazy(() =>
-  import('./features/investimentos/InvestimentosPage').then((m) => ({ default: m.InvestimentosPage })),
-)
 
 const loading = <p className="p-8 text-center text-sm text-slate-500">Carregando…</p>
 
@@ -31,7 +28,6 @@ export function App() {
           <Route path="lancamentos" element={<LancamentosPage />} />
           <Route path="orcamento" element={<OrcamentoPage />} />
           <Route path="cartoes" element={<CartoesPage />} />
-          <Route path="investimentos" element={<Suspense fallback={loading}><InvestimentosPage /></Suspense>} />
           <Route path="relatorios" element={<Suspense fallback={loading}><RelatoriosPage /></Suspense>} />
           <Route path="mais" element={<MaisPage />} />
           <Route path="mais/categorias" element={<CategoriasPage />} />

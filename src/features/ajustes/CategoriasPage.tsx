@@ -98,7 +98,7 @@ export function CategoriasPage() {
           Toque na seta para ver e cadastrar subcategorias.{' '}
           {type === 'despesa'
             ? 'O limite mensal do orçamento vale para a categoria inteira.'
-            : 'Use-as para separar o mesmo tipo de investimento por banco ou corretora; o saldo é acompanhado em cada uma.'}
+            : 'Use-as, se quiser, para separar o mesmo tipo de investimento por banco ou corretora.'}
         </p>
       )}
 

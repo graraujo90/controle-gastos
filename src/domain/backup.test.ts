@@ -6,7 +6,6 @@ const data = {
   paymentMethods: [{ id: 'm1', name: 'Pix' }],
   transactions: [{ id: 't1', amount: 1000 }],
   budgets: [],
-  balances: [],
   settings: [{ key: 'saldoInicial', value: 5000 }],
 }
 
@@ -17,9 +16,14 @@ describe('backup', () => {
   })
 
   it('tabela ausente em backup antigo entra vazia', () => {
-    const { balances: _omit, ...older } = data
+    const { budgets: _omit, ...older } = data
     const text = JSON.stringify({ app: 'controle-gastos', format: 1, exportedAt: '', data: older })
-    expect(parseBackup(text).data.balances).toEqual([])
+    expect(parseBackup(text).data.budgets).toEqual([])
+  })
+
+  it('ignora tabelas que o app não usa mais (saldos de investimento de backups antigos)', () => {
+    const text = JSON.stringify(buildBackup({ ...data, balances: [{ id: 'b1' }] } as typeof data, ''))
+    expect(Object.keys(parseBackup(text).data)).not.toContain('balances')
   })
 
   it('recusa arquivo que não é JSON', () => {

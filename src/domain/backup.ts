@@ -1,5 +1,5 @@
 /** Tabelas que entram no arquivo de backup, na ordem em que são gravadas. */
-export const BACKUP_TABLES = ['categories', 'paymentMethods', 'transactions', 'budgets', 'balances', 'settings'] as const
+export const BACKUP_TABLES = ['categories', 'paymentMethods', 'transactions', 'budgets', 'settings'] as const
 export type BackupTable = (typeof BACKUP_TABLES)[number]
 
 export const BACKUP_APP = 'controle-gastos'

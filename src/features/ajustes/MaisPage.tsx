@@ -1,9 +1,8 @@
-import { Archive, ChevronRight, Cloud, CreditCard, DatabaseBackup, Tags, TrendingUp, Wallet } from 'lucide-react'
+import { Archive, ChevronRight, Cloud, CreditCard, DatabaseBackup, Tags, Wallet } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 const READY = [
   { to: '/cartoes', label: 'Cartões e faturas', hint: 'Fatura do mês, limite usado e próximas faturas', icon: CreditCard },
-  { to: '/investimentos', label: 'Investimentos', hint: 'Valores aportados por mês, ano e categoria', icon: TrendingUp },
   { to: '/mais/categorias', label: 'Categorias e subcategorias', hint: 'Receitas, despesas e investimentos', icon: Tags },
   { to: '/mais/formas', label: 'Formas de recebimento e pagamento', hint: 'Contas, Pix, dinheiro e cartões de crédito', icon: Wallet },
   { to: '/mais/arquivados', label: 'Arquivados', hint: 'Restaurar categorias e formas excluídas', icon: Archive },

@@ -4,7 +4,7 @@ import type { Deletion } from '../domain/sync'
 import { monthOf, todayISO } from '../lib/format'
 import { seedCategories, seedMethods } from './seed'
 import type {
-  BalanceSnapshot, Budget, Category, LocalValue, PaymentMethod, Setting, Transaction,
+  Budget, Category, LocalValue, PaymentMethod, Setting, Transaction,
 } from './types'
 
 export const db = new Dexie('controle-gastos') as Dexie & {
@@ -12,7 +12,6 @@ export const db = new Dexie('controle-gastos') as Dexie & {
   paymentMethods: EntityTable<PaymentMethod, 'id'>
   transactions: EntityTable<Transaction, 'id'>
   budgets: EntityTable<Budget, 'id'>
-  balances: EntityTable<BalanceSnapshot, 'id'>
   settings: EntityTable<Setting, 'key'>
   deletions: Table<Deletion, [string, string]>
   local: EntityTable<LocalValue, 'key'>
@@ -73,6 +72,9 @@ db.version(4)
       await tx.table('settings').delete('ultimoBackup')
     }
   })
+
+// v5: o app deixa de acompanhar saldo e rendimento de investimentos; ficam só os lançamentos.
+db.version(5).stores({ balances: null })
 
 // Roda uma única vez, quando o banco é criado no aparelho.
 db.on('populate', (tx) => {

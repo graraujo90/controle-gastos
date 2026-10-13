@@ -87,17 +87,6 @@ export interface Budget extends Base {
   limit: number
 }
 
-/**
- * Saldo de um investimento informado pelo usuário em uma data (ex.: extrato do banco).
- * Vale para a subcategoria (ex.: o banco) quando informada, senão para a categoria inteira.
- */
-export interface BalanceSnapshot extends Base {
-  categoryId: string
-  subcategoryId?: string | null
-  date: string
-  amount: number
-}
-
 /** Configuração compartilhada entre os aparelhos (ex.: saldo inicial). */
 export interface Setting {
   key: string
