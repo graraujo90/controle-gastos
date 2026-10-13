@@ -37,12 +37,16 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
   fatura (`domain/fatura.ts`); nas outras formas é a data, ou o vencimento informado.
 - A lista de lançamentos pode ser vista por vencimento ou por data da compra (preferência por aparelho). Isso muda
   só a listagem: totais, orçamento e relatórios seguem sempre o vencimento.
+- O filtro da lista de lançamentos mora no endereço (`#/lancamentos?tipo=despesa&cat=…`, `domain/filtro.ts`).
+  Qualquer número do Início ou dos relatórios que leve à lista deve usar `lancamentosLink()`, nunca estado interno.
+  "Em atraso" ignora o período e mostra tudo que está vencido e não confirmado.
 - Parcelas: uma compra em N vezes vira N lançamentos ligados por `installmentGroupId`; centavos que sobram vão na 1ª.
 - Confirmação (`paid`) vale para os três tipos: despesa paga, receita recebida, investimento aplicado ou resgatado.
   **Pendentes contam no resultado do mês como previsto**; o Início mostra à parte o realizado e as pendências.
   No crédito, pagar marca a fatura inteira do cartão naquele mês.
 - Orçamento: limite só por categoria (subcategorias somam nela). O limite vale do mês em que foi definido em diante,
-  até o próximo ajuste; meses anteriores não mudam (`domain/orcamento.ts`).
+  até o próximo ajuste; meses anteriores não mudam (`domain/orcamento.ts`). O total do mês compara **todas** as
+  despesas com a soma dos limites: categoria sem limite conta como limite zero.
 - Subcategorias existem em despesas e em investimentos.
 - Investimentos: o app **não** acompanha saldo nem rendimento (isso foi removido a pedido do dono). Ficam só os
   lançamentos, para medir o impacto no orçamento: aporte e resgate (`resgate: true`). O resgate abate do investido

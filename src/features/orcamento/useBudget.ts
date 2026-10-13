@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../../db/db'
 import type { Category } from '../../db/types'
-import { budgetLevel, effectiveBudgets, type BudgetLevel } from '../../domain/orcamento'
+import { budgetLevel, budgetTotals, effectiveBudgets, type BudgetLevel } from '../../domain/orcamento'
 import { totalsByCategory } from '../../domain/resumo'
 import { useMonthData } from '../lancamentos/useMonthData'
 
@@ -44,10 +44,15 @@ export function useBudget(month: string) {
         a.category.name.localeCompare(b.category.name, 'pt-BR'),
     )
 
-  const budgeted = rows.filter((r) => r.limit)
-  const totalLimit = budgeted.reduce((sum, r) => sum + r.limit!, 0)
-  const totalSpent = budgeted.reduce((sum, r) => sum + r.spent, 0)
-  const unbudgetedSpent = rows.filter((r) => !r.limit).reduce((sum, r) => sum + r.spent, 0)
+  // O total considera todas as despesas do mês; categoria sem limite conta como limite zero.
+  const totals = budgetTotals(rows)
 
-  return { rows, expenses, categories, totalLimit, totalSpent, unbudgetedSpent }
+  return {
+    rows,
+    expenses,
+    categories,
+    totalLimit: totals.limit,
+    totalSpent: totals.spent,
+    unbudgetedSpent: totals.unbudgeted,
+  }
 }

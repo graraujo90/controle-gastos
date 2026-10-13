@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { budgetLevel, effectiveBudgets } from './orcamento'
+import { budgetLevel, budgetTotals, effectiveBudgets } from './orcamento'
+
+describe('budgetTotals', () => {
+  it('gasto em categoria sem limite entra no total e consome o orçamento', () => {
+    const t = budgetTotals([
+      { spent: 80000, limit: 100000 },
+      { spent: 30000, limit: 20000 },
+      { spent: 15000 },
+      { spent: 0 },
+    ])
+    expect(t).toEqual({ limit: 120000, spent: 125000, unbudgeted: 15000 })
+  })
+
+  it('sem nenhum limite definido, o limite total é zero', () => {
+    expect(budgetTotals([{ spent: 5000 }])).toEqual({ limit: 0, spent: 5000, unbudgeted: 5000 })
+  })
+})
 
 describe('effectiveBudgets', () => {
   const budgets = [

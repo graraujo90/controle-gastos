@@ -20,6 +20,29 @@ export function effectiveBudgets(
   return out
 }
 
+export interface BudgetTotals {
+  /** Soma dos limites definidos. */
+  limit: number
+  /** Todas as despesas do mês, com ou sem limite. */
+  spent: number
+  /** Parte de `spent` que veio de categorias sem limite. */
+  unbudgeted: number
+}
+
+/**
+ * Total do orçamento do mês. Categoria sem limite conta como limite zero: o que for gasto nela
+ * consome o orçamento em vez de ficar de fora da conta.
+ */
+export function budgetTotals(rows: { spent: number; limit?: number }[]): BudgetTotals {
+  const totals = { limit: 0, spent: 0, unbudgeted: 0 }
+  for (const row of rows) {
+    totals.spent += row.spent
+    if (row.limit) totals.limit += row.limit
+    else totals.unbudgeted += row.spent
+  }
+  return totals
+}
+
 export type BudgetLevel = 'ok' | 'alerta' | 'estourado'
 
 /** 'alerta' a partir de 80% do limite; 'estourado' quando passa dele. */

@@ -124,7 +124,7 @@ export function OrcamentoPage() {
             </div>
             {unbudgetedSpent > 0 && (
               <div className="mt-1 text-xs text-slate-500">
-                Mais {formatBRL(unbudgetedSpent)} gastos em categorias sem limite.
+                Inclui {formatBRL(unbudgetedSpent)} em categorias sem limite, que contam como limite R$ 0,00.
               </div>
             )}
           </>
