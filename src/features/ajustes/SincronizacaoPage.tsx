@@ -161,7 +161,8 @@ export function SincronizacaoPage() {
             </section>
           )}
 
-          {sync.status === 'reconectar' && (
+          {/* Num erro que o app não reconhece, entrar de novo na Microsoft também fica à mão. */}
+          {(sync.status === 'reconectar' || sync.status === 'erro') && (
             <button className="btn btn-primary" onClick={run(reconnect)} disabled={busy}>
               <Cloud size={16} /> Entrar de novo
             </button>

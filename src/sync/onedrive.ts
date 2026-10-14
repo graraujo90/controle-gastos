@@ -93,6 +93,21 @@ export class TimeoutError extends Error {}
 const request = (url: string, init: RequestInit, what: string) =>
   withTimeout(fetch(url, { ...init, cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) }), what)
 
+/**
+ * Erros da renovação silenciosa (janela oculta da Microsoft) que só se resolvem passando de novo pela
+ * Microsoft. Acontecem depois das 24 h, quando o navegador bloqueia a janela oculta (Safari, por exemplo)
+ * ou ela não responde a tempo.
+ */
+const SILENT_RENEWAL_FAILURES = new Set(['timed_out', 'monitor_window_timeout', 'block_iframe_reload', 'empty_window_error'])
+
+/** O erro do login pede uma ida à Microsoft? Sem internet, não: é só esperar a conexão voltar. */
+export function needsReconnect(error: unknown, online = navigator.onLine): boolean {
+  if (!online || !error || typeof error !== 'object') return false
+  const { name, errorCode } = error as { name?: string; errorCode?: string }
+  if (name === 'InteractionRequiredAuthError') return true
+  return name === 'BrowserAuthError' && !!errorCode && SILENT_RENEWAL_FAILURES.has(errorCode)
+}
+
 async function token(homeAccountId: string): Promise<string> {
   const app = await withTimeout(client(), 'O login da Microsoft')
   const account = app.getAccount({ homeAccountId })
@@ -101,8 +116,7 @@ async function token(homeAccountId: string): Promise<string> {
     return (await withTimeout(app.acquireTokenSilent({ scopes: SCOPES, account }), 'O login da Microsoft')).accessToken
   } catch (error) {
     if (error instanceof TimeoutError) throw error
-    const { InteractionRequiredAuthError } = await import('@azure/msal-browser')
-    if (error instanceof InteractionRequiredAuthError) throw new ReconnectError('O acesso ao OneDrive expirou.')
+    if (needsReconnect(error)) throw new ReconnectError('O acesso ao OneDrive expirou.')
     throw error
   }
 }
