@@ -160,7 +160,7 @@ export function CartoesPage() {
         </div>
       ) : (
         <>
-          <div className="card flex items-baseline justify-between p-4">
+          <div className="card flex flex-wrap items-baseline justify-between gap-x-3 p-4">
             <span className="text-sm text-slate-500">Faturas de {monthLabel(month).toLowerCase()}</span>
             <span className="text-xl font-bold tabular-nums">{formatBRL(total)}</span>
           </div>

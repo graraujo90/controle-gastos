@@ -102,7 +102,8 @@ export function InicioPage() {
         )}
       </Link>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+      {/* No celular, uma linha por tipo (cabe qualquer valor); a partir do tablet, lado a lado. */}
+      <div className="card divide-y divide-slate-100 overflow-hidden sm:grid sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         {(
           [
             ['Receitas', summary.receitas, 'receita'],
@@ -113,19 +114,21 @@ export function InicioPage() {
           <Link
             key={type}
             to={lancamentosLink({ tipo: type })}
-            className={`rounded-xl p-3 hover:opacity-80 sm:p-4 ${TYPE_STYLE[type].bg}`}
+            className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 sm:block sm:p-4"
           >
-            <div className="truncate text-xs font-medium text-slate-600">{label}</div>
-            <div className={`truncate text-sm font-bold tabular-nums sm:text-xl ${TYPE_STYLE[type].text}`}>
+            <span className={`h-8 w-1 shrink-0 rounded-full sm:mb-2 sm:block sm:h-1 sm:w-8 ${TYPE_STYLE[type].solid}`} />
+            <span className="flex-1 text-sm font-medium text-slate-600 sm:block sm:text-xs">{label}</span>
+            <span className={`whitespace-nowrap font-bold tabular-nums sm:block sm:text-xl ${TYPE_STYLE[type].text}`}>
               {formatBRL(value)}
-            </div>
+            </span>
+            <ChevronRight size={16} className="shrink-0 text-slate-400 sm:hidden" />
           </Link>
         ))}
       </div>
 
       {budget.totalLimit > 0 && (
         <Link to="/orcamento" className="card block p-4 hover:bg-slate-50">
-          <div className="mb-2 flex items-baseline justify-between gap-2">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
             <h2 className="font-semibold">Orçamento</h2>
             <span className="text-sm tabular-nums text-slate-600">
               <span className="font-semibold text-slate-900">{formatBRL(budget.totalSpent)}</span> de{' '}

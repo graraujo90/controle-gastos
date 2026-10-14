@@ -46,48 +46,48 @@ export function TransactionRow({ tx, categories, methods, view, purchase }: Prop
           : tx.paid
             ? `${credit ? 'fatura' : 'vencimento'} ${shortDate(tx.dueDate)}`
             : undefined // pendente: o status ao lado já mostra a data
-  const detail = [
-    tx.resgate ? 'Resgate' : undefined,
-    grouped ? `em ${purchase.count}×` : undefined,
-    category?.name,
-    sub?.name,
-    method?.name,
-    otherDate,
-  ]
-    .filter((part) => part && part !== name)
-    .join(' · ')
+  // Duas linhas curtas em vez de uma longa cortada: o quê (categoria) e como (forma, data, situação).
+  const join = (parts: (string | undefined)[]) => parts.filter((part) => part && part !== name).join(' · ')
+  const what = join([tx.resgate ? 'Resgate' : undefined, category?.name, sub?.name])
+  const how = join([grouped ? `em ${purchase.count}×` : undefined, method?.name, otherDate])
 
   return (
     <div className="flex items-center hover:bg-slate-50">
-      <button className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left" onClick={() => openForm(tx)}>
+      <button className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-1 text-left" onClick={() => openForm(tx)}>
         <CategoryIcon category={sub ?? category} parent={sub ? category : undefined} />
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 font-medium">
-            <span className="truncate">{name}</span>
+          <span className="flex items-start gap-1.5 font-medium leading-snug">
+            <span className="line-clamp-2 break-words">{name}</span>
             {installment && (
               // Fora do nome, para não sumir quando ele é cortado.
               <span
-                className="shrink-0 rounded bg-slate-100 px-1.5 text-[11px] font-semibold tabular-nums text-slate-600"
+                className="mt-0.5 shrink-0 rounded bg-slate-100 px-1.5 text-[11px] font-semibold tabular-nums text-slate-600"
                 aria-label={`Parcela ${installment.replace('/', ' de ')}`}
               >
                 {installment}
               </span>
             )}
-            {tx.recurrenceId && <Repeat size={12} className="shrink-0 text-slate-400" aria-label="Recorrente" />}
+            {tx.recurrenceId && <Repeat size={12} className="mt-1 shrink-0 text-slate-400" aria-label="Recorrente" />}
           </span>
-          <span className="block truncate text-xs text-slate-500">
-            {detail}
-            {status && (
-              <span className={overdue ? 'font-semibold text-rose-600' : 'text-amber-600'}>
-                {detail && ' · '}
-                {status}
-              </span>
-            )}
+          {/* O nome usa a largura toda; o valor fica na linha de baixo, à direita, sempre inteiro. */}
+          <span className="mt-0.5 flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{what}</span>
+            <span className={`shrink-0 whitespace-nowrap font-semibold tabular-nums ${style.text}`}>
+              {tx.resgate ? '+' : style.sign}
+              {formatBRL(grouped ? purchase.total : tx.amount)}
+            </span>
           </span>
-        </span>
-        <span className={`shrink-0 font-semibold tabular-nums ${style.text}`}>
-          {tx.resgate ? '+' : style.sign}
-          {formatBRL(grouped ? purchase.total : tx.amount)}
+          {(how || status) && (
+            <span className="block truncate text-xs text-slate-500">
+              {how}
+              {status && (
+                <span className={overdue ? 'font-semibold text-rose-600' : 'text-amber-600'}>
+                  {how && ' · '}
+                  {status}
+                </span>
+              )}
+            </span>
+          )}
         </span>
       </button>
       {grouped ? (

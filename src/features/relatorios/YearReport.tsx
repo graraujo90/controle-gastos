@@ -61,7 +61,7 @@ export function YearReport({ transactions, year, setYear }: Props) {
     <div className="space-y-4">
       <YearPicker year={year} onChange={setYear} />
 
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {(
           [
             ['Resultado do ano', last.acumuladoAno, last.acumuladoAno < 0 ? 'text-rose-600' : 'text-slate-900', '', undefined],
@@ -72,9 +72,11 @@ export function YearReport({ transactions, year, setYear }: Props) {
         ).map(([label, value, color, hint, type]) => {
           const content = (
             <>
-              <div className="text-xs font-medium text-slate-500">{label}</div>
-              <div className={`truncate text-xl font-bold tabular-nums ${color}`}>{formatBRL(value)}</div>
-              {hint && <div className="text-xs text-slate-500">{hint}</div>}
+              <div className="pt-1 text-xs font-medium text-slate-500 sm:pt-0">{label}</div>
+              <div className="text-right sm:text-left">
+                <div className={`whitespace-nowrap text-xl font-bold tabular-nums ${color}`}>{formatBRL(value)}</div>
+                {hint && <div className="text-xs text-slate-500">{hint}</div>}
+              </div>
             </>
           )
           // Os indicadores por tipo abrem os lançamentos do ano inteiro; a lista usa o ano do mês em exibição.
@@ -83,12 +85,12 @@ export function YearReport({ transactions, year, setYear }: Props) {
               key={label}
               to={lancamentosLink({ tipo: type }, 'ano')}
               onClick={() => setMonth(`${year}-${month.slice(5, 7)}`)}
-              className="card block p-4 hover:bg-slate-50"
+              className="card flex items-start justify-between gap-3 p-4 hover:bg-slate-50 sm:block"
             >
               {content}
             </Link>
           ) : (
-            <div key={label} className="card p-4">{content}</div>
+            <div key={label} className="card flex items-start justify-between gap-3 p-4 sm:block">{content}</div>
           )
         })}
       </div>

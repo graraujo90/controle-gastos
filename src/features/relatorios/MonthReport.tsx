@@ -65,21 +65,25 @@ export function MonthReport({ transactions, categories, methods }: Props) {
     <div className="space-y-4">
       <MonthPicker />
 
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
-        <div className="card p-4">
-          <div className="text-xs font-medium text-slate-500">Resultado</div>
-          <div className={`truncate text-xl font-bold tabular-nums ${summary.resultado < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-            {formatBRL(summary.resultado)}
+      <div className="grid gap-2 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+        <div className="card flex items-start justify-between gap-3 p-4 sm:block">
+          <div className="pt-1 text-xs font-medium text-slate-500 sm:pt-0">Resultado</div>
+          <div className="text-right sm:text-left">
+            <div className={`whitespace-nowrap text-xl font-bold tabular-nums ${summary.resultado < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+              {formatBRL(summary.resultado)}
+            </div>
+            <span className="text-xs text-slate-500">{summary.resultado < 0 ? 'prejuízo no mês' : 'lucro no mês'}</span>
           </div>
-          <span className="text-xs text-slate-500">{summary.resultado < 0 ? 'prejuízo no mês' : 'lucro no mês'}</span>
         </div>
         {tiles.map((tile) => (
-          <Link key={tile.type} to={lancamentosLink({ tipo: tile.type })} className="card block p-4 hover:bg-slate-50">
-            <div className="text-xs font-medium text-slate-500">{tile.label}</div>
-            <div className={`truncate text-xl font-bold tabular-nums ${TYPE_STYLE[tile.type].text}`}>
-              {formatBRL(tile.value)}
+          <Link key={tile.type} to={lancamentosLink({ tipo: tile.type })} className="card flex items-start justify-between gap-3 p-4 sm:block hover:bg-slate-50">
+            <div className="pt-1 text-xs font-medium text-slate-500 sm:pt-0">{tile.label}</div>
+            <div className="text-right sm:text-left">
+              <div className={`whitespace-nowrap text-xl font-bold tabular-nums ${TYPE_STYLE[tile.type].text}`}>
+                {formatBRL(tile.value)}
+              </div>
+              <Delta current={tile.value} previous={tile.prev} month={month} />
             </div>
-            <Delta current={tile.value} previous={tile.prev} month={month} />
           </Link>
         ))}
       </div>

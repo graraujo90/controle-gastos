@@ -114,7 +114,7 @@ export function OrcamentoPage() {
         {totalLimit > 0 ? (
           <>
             <div className="text-sm text-slate-500">Orçamento do mês</div>
-            <div className="mb-2 flex items-baseline justify-between gap-2">
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
               <span className="text-2xl font-bold tabular-nums">{formatBRL(totalSpent)}</span>
               <span className="text-sm text-slate-500">de {formatBRL(totalLimit)}</span>
             </div>
