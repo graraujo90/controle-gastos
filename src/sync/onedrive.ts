@@ -52,6 +52,22 @@ export async function login(): Promise<void> {
   await app.loginRedirect({ scopes: SCOPES, prompt: 'select_account' })
 }
 
+/**
+ * Renova o acesso de uma conta já conectada, indo à Microsoft já com a conta indicada (sem a tela de
+ * escolha). Com `silentOnly`, a Microsoft nunca mostra tela: se ainda há sessão no navegador, volta
+ * logado; se precisar de senha, volta com erro, tratado em `completeLogin`.
+ */
+export async function reauthenticate(homeAccountId: string, username: string, silentOnly: boolean): Promise<void> {
+  const app = await client()
+  const account = app.getAccount({ homeAccountId }) ?? undefined
+  await app.acquireTokenRedirect({
+    scopes: SCOPES,
+    account,
+    loginHint: account ? undefined : username,
+    prompt: silentOnly ? 'none' : undefined,
+  })
+}
+
 export async function forgetAccount(homeAccountId: string): Promise<void> {
   const app = await client()
   const account = app.getAccount({ homeAccountId })

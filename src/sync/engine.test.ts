@@ -4,7 +4,16 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /** O "OneDrive" de mentira: um arquivo e a versão dele. */
-const cloud = vi.hoisted(() => ({ text: null as string | null, version: 0 }))
+const cloud = vi.hoisted(() => ({
+  text: null as string | null,
+  version: 0,
+  /** Acesso vencido: o OneDrive recusa até a conta passar de novo pela Microsoft. */
+  expired: false,
+  /** Idas à Microsoft para renovar o acesso; `silentOnly` é a tentativa automática, sem tela. */
+  reauth: [] as { silentOnly: boolean }[],
+  /** A Microsoft voltou sem login (pediu senha numa tentativa sem tela). */
+  loginFails: false,
+}))
 
 vi.mock('./onedrive', () => {
   class GraphError extends Error {}
@@ -14,12 +23,21 @@ vi.mock('./onedrive', () => {
     GraphError,
     ReconnectError,
     TimeoutError,
-    completeLogin: async () => ({ homeAccountId: 'conta-1', username: 'teste@outlook.com' }),
+    completeLogin: async () => {
+      if (cloud.loginFails) throw new Error('login_required')
+      return { homeAccountId: 'conta-1', username: 'teste@outlook.com' }
+    },
     login: async () => undefined,
     forgetAccount: async () => undefined,
     ownFolder: async () => ({ driveId: 'd', folderId: 'f' }),
     sharedFolder: async () => ({ driveId: 'd', folderId: 'f' }),
-    download: async () => (cloud.text === null ? null : { text: cloud.text, eTag: String(cloud.version) }),
+    reauthenticate: async (_id: string, _user: string, silentOnly: boolean) => {
+      cloud.reauth.push({ silentOnly })
+    },
+    download: async () => {
+      if (cloud.expired) throw new ReconnectError('O acesso ao OneDrive expirou.')
+      return cloud.text === null ? null : { text: cloud.text, eTag: String(cloud.version) }
+    },
     upload: async (_account: string, _ref: unknown, text: string, eTag?: string) => {
       if (eTag !== undefined && eTag !== String(cloud.version)) return null
       cloud.text = text
@@ -63,13 +81,19 @@ async function addExpense(device: Awaited<ReturnType<typeof newDevice>>, descrip
   })
 }
 
-const descriptions = async (device: Awaited<ReturnType<typeof newDevice>>) =>
+type Device = Awaited<ReturnType<typeof newDevice>>
+
+const descriptions = async (device: Device) =>
   (await device.db.transactions.toArray()).map((t) => t.description).sort()
 
 describe('sincronização entre aparelhos', () => {
   beforeEach(() => {
     cloud.text = null
     cloud.version = 0
+    cloud.expired = false
+    cloud.reauth = []
+    cloud.loginFails = false
+    sessionStorage.clear()
   })
 
   it('primeiro aparelho (dono) cria o arquivo na nuvem com os dados dele', async () => {
@@ -121,6 +145,37 @@ describe('sincronização entre aparelhos', () => {
     const b = await newDevice()
     await b.connect('convidado')
     expect(await descriptions(b)).toEqual([])
+  })
+
+  it('acesso vencido: ao abrir, tenta renovar sem tela uma única vez; depois fica o aviso', async () => {
+    const a = await newDevice()
+    await a.connect('dono')
+    cloud.expired = true
+    // Reabrir o mesmo aparelho: banco novo nos testes, então leva junto o que estava guardado.
+    const reopen = async (from: Device) => {
+      const saved = await from.db.local.toArray()
+      const device = await newDevice()
+      await device.db.local.bulkPut(saved)
+      await device.engine.initSync()
+      await settle(device.engine)
+      return device
+    }
+
+    // Ao abrir, a 1ª sincronização falha e o app vai sozinho à Microsoft, sem tela de login.
+    const again = await reopen(a)
+    await vi.waitFor(() => expect(cloud.reauth).toEqual([{ silentOnly: true }]))
+    expect((await again.db.local.get('syncPending'))?.value).toMatchObject({ mode: 'dono', auto: true })
+
+    // A Microsoft pediu senha e voltou sem conta: fica o aviso, sem nova tentativa automática.
+    cloud.loginFails = true
+    const back = await reopen(again)
+    await settle(back.engine)
+    expect(back.engine.getSyncState().status).toBe('reconectar')
+    expect(cloud.reauth).toHaveLength(1)
+
+    // Tocar em "Entrar de novo" vai à Microsoft com a conta indicada, podendo mostrar a tela.
+    await back.engine.reconnect()
+    expect(cloud.reauth.at(-1)).toEqual({ silentOnly: false })
   })
 
   it('aparelho com lançamentos conectando a uma nuvem com dados pede escolha, sem misturar', async () => {

@@ -198,10 +198,19 @@ function startTriggers() {
 
 // ---------- conexão ----------
 
+/** Login em curso: guardado antes de ir à Microsoft, lido na volta. */
+interface Pending {
+  mode: SyncMode
+  link?: string
+  /** Renovação automática feita pelo app ao abrir, sem o usuário pedir. */
+  auto?: boolean
+}
+
 /** Roda uma vez na abertura do app, antes das telas: conclui um login em curso e retoma a sincronização. */
 export async function initSync(): Promise<void> {
+  const openedAt = Date.now()
   meta = ((await db.local.get(META))?.value as SyncMeta | undefined) ?? null
-  const pending = (await db.local.get(PENDING))?.value as { mode: SyncMode; link?: string } | undefined
+  const pending = (await db.local.get(PENDING))?.value as Pending | undefined
   if (!meta && !pending) return
 
   startTriggers()
@@ -217,15 +226,23 @@ export async function initSync(): Promise<void> {
         await finishConnect(pending.mode, pending.link, account.homeAccountId, account.username)
       }
     } catch (error) {
+      // A renovação automática não conseguiu sem senha: fica o aviso para entrar de novo, sem mudar de tela.
+      if (pending.auto) {
+        setState('reconectar', 'O acesso ao OneDrive expirou.')
+        return
+      }
       setState('erro', error instanceof Error ? error.message : 'Não foi possível conectar ao OneDrive.')
       location.hash = '#/mais/sincronizacao'
       return
     }
-    location.hash = '#/mais/sincronizacao'
+    if (!pending.auto) location.hash = '#/mais/sincronizacao'
   }
   if (!meta) return
   if (meta.needsChoice) setState('escolher')
-  else void syncNow()
+  else
+    void syncNow().then(() => {
+      if (state.status === 'reconectar' && !pending?.auto) void autoReconnect(openedAt)
+    })
 }
 
 /** Inicia a conexão: guarda a intenção e manda para o login da Microsoft (a página recarrega na volta). */
@@ -234,9 +251,34 @@ export async function connect(mode: SyncMode, link?: string): Promise<void> {
   await onedrive.login()
 }
 
-/** O acesso expirou: novo login na Microsoft, mantendo a mesma pasta. */
+/** O acesso expirou: novo login na Microsoft, já com a conta conectada e mantendo a mesma pasta. */
 export async function reconnect(): Promise<void> {
-  if (meta) await connect(meta.mode)
+  if (!meta) return
+  await db.local.put({ key: PENDING, value: { mode: meta.mode } satisfies Pending })
+  await onedrive.reauthenticate(meta.homeAccountId, meta.account, false)
+}
+
+const AUTO_KEY = 'sync.renovacaoAutomatica'
+/** Só logo depois de abrir: mais tarde a pessoa pode estar no meio de um lançamento. */
+const AUTO_WINDOW_MS = 20000
+
+/**
+ * A Microsoft só renova o acesso sozinha por 24 horas em apps web. Passado isso, ao abrir o app, tenta
+ * uma ida e volta sem tela à Microsoft; se ainda houver sessão no navegador, volta tudo conectado.
+ * Uma tentativa por abertura, para nunca entrar em ciclo.
+ */
+async function autoReconnect(openedAt: number): Promise<void> {
+  if (!meta || Date.now() - openedAt > AUTO_WINDOW_MS) return
+  // Com um formulário aberto, sair da tela perderia o que foi digitado.
+  if (document.querySelector('[role="dialog"]')) return
+  try {
+    if (sessionStorage.getItem(AUTO_KEY)) return
+    sessionStorage.setItem(AUTO_KEY, '1')
+  } catch {
+    return // sem como marcar a tentativa, não arrisca repetir
+  }
+  await db.local.put({ key: PENDING, value: { mode: meta.mode, auto: true } satisfies Pending })
+  await onedrive.reauthenticate(meta.homeAccountId, meta.account, true)
 }
 
 async function finishConnect(mode: SyncMode, link: string | undefined, homeAccountId: string, account: string) {
