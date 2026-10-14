@@ -147,3 +147,16 @@ describe('minha parte e estorno', () => {
     expect(rows.find((r) => r.id === CARDS_ROW)!.total).toBe(5000)
   })
 })
+
+describe('despesas por categoria sem linhas zeradas', () => {
+  it('categoria em que compra e estorno se anulam não aparece', () => {
+    const b = expenseBreakdown([
+      { categoryId: 'lazer', subcategoryId: null, amount: 5000, paid: true },
+      { categoryId: 'lazer', subcategoryId: null, amount: 5000, paid: false, estorno: true },
+      { categoryId: 'mercado', subcategoryId: 'feira', amount: 3000, paid: true },
+      { categoryId: 'mercado', subcategoryId: null, amount: 2000, paid: true, myShare: 0 },
+    ])
+    expect(b.categories.map((c) => c.id)).toEqual(['mercado'])
+    expect(b.categories[0].subs.map((s) => s.id)).toEqual(['feira'])
+  })
+})

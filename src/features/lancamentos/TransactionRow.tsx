@@ -113,7 +113,8 @@ export function TransactionRow({ tx, categories, methods, view, purchase, select
           {/* O nome usa a largura toda; o valor fica na linha de baixo, à direita, sempre inteiro. */}
           <span className="mt-0.5 flex items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{what}</span>
-            <span className={`shrink-0 whitespace-nowrap font-semibold tabular-nums ${style.text}`}>
+            {/* Estorno é dinheiro voltando: verde, como receita, para combinar com o sinal de +. */}
+            <span className={`shrink-0 whitespace-nowrap font-semibold tabular-nums ${tx.estorno ? TYPE_STYLE.receita.text : style.text}`}>
               {tx.resgate || tx.estorno ? '+' : style.sign}
               {formatBRL(grouped ? purchase.total : tx.amount)}
             </span>

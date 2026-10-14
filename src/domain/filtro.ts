@@ -29,12 +29,19 @@ export interface TxFilter {
   parcelado?: boolean
   /** Só lançamentos criados por uma recorrência. */
   recorrente?: boolean
+  /**
+   * Intervalo de datas ('AAAA-MM-DD', inclusive), pela data do "Ver por" da lista (vencimento ou compra).
+   * Com intervalo, o seletor de mês e ano fica de lado.
+   */
+  de?: string
+  ate?: string
 }
 
 const PENDING: PendingKind[] = ['pagar', 'receber', 'investir']
 const SITUATIONS: Situation[] = ['confirmado', 'pendente', 'atrasado']
 const oneOf = <T extends string>(value: string | null, options: readonly T[]) =>
   options.includes(value as T) ? (value as T) : undefined
+const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined)
 const cents = (value: string | null) => {
   const n = Number(value)
   return value && Number.isInteger(n) && n > 0 ? n : undefined
@@ -43,6 +50,9 @@ const cents = (value: string | null) => {
 // O filtro mora no endereço da tela (#/lancamentos?tipo=despesa&cat=…): assim o Início e os relatórios
 // conseguem abrir a lista já filtrada, e o "voltar" do aparelho funciona. Valores inválidos são ignorados.
 export function parseFilter(params: URLSearchParams): TxFilter {
+  let de = isoDate(params.get('de'))
+  let ate = isoDate(params.get('ate'))
+  if (de && ate && de > ate) [de, ate] = [ate, de] // datas trocadas: vale o intervalo entre elas
   return {
     tipo: oneOf(params.get('tipo'), TX_TYPES),
     pendencia: oneOf(params.get('pend'), PENDING),
@@ -55,6 +65,8 @@ export function parseFilter(params: URLSearchParams): TxFilter {
     texto: params.get('q')?.trim() || undefined,
     parcelado: params.get('parc') === '1' || undefined,
     recorrente: params.get('rec') === '1' || undefined,
+    de,
+    ate,
   }
 }
 
@@ -74,6 +86,8 @@ export function filterToParams(filter: TxFilter, period: Period = 'mes'): URLSea
     ['q', filter.texto?.trim()],
     ['parc', filter.parcelado ? '1' : undefined],
     ['rec', filter.recorrente ? '1' : undefined],
+    ['de', filter.de],
+    ['ate', filter.ate],
   ]
   const params = new URLSearchParams()
   for (const [key, value] of entries) if (value !== undefined && value !== '') params.set(key, String(value))
@@ -95,11 +109,13 @@ export interface FilterContext {
   creditIds: Set<string>
   /** Nome de cada categoria e subcategoria, para a busca por texto. */
   categoryNames: Map<string, string>
+  /** Qual data o intervalo usa: a do vencimento (padrão) ou a da compra. */
+  by?: 'vencimento' | 'compra'
 }
 
 type Filterable = Pick<
   Transaction,
-  'type' | 'resgate' | 'paid' | 'dueDate' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'installmentGroupId' | 'recurrenceId'
+  'type' | 'resgate' | 'paid' | 'date' | 'dueDate' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'installmentGroupId' | 'recurrenceId'
 >
 
 const plain = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -130,6 +146,9 @@ export function matchesFilter(
   if (filter.max !== undefined && shown.amount > filter.max) return false
   if (filter.parcelado && !tx.installmentGroupId) return false
   if (filter.recorrente && !tx.recurrenceId) return false
+  const day = ctx.by === 'compra' ? tx.date : tx.dueDate
+  if (filter.de && day < filter.de) return false
+  if (filter.ate && day > filter.ate) return false
   if (filter.texto) {
     const haystack = [tx.description, ctx.categoryNames.get(tx.categoryId), tx.subcategoryId && ctx.categoryNames.get(tx.subcategoryId)]
     if (!plain(haystack.filter(Boolean).join(' ')).includes(plain(filter.texto))) return false

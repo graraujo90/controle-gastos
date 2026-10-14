@@ -13,6 +13,7 @@ const ctx: FilterContext = {
 const tx = (over: Partial<Parameters<typeof matchesFilter>[0]> = {}) => ({
   type: 'despesa' as const,
   paid: true,
+  date: '2026-09-28',
   dueDate: '2026-10-05',
   amount: 10000,
   categoryId: 'moradia',
@@ -136,5 +137,28 @@ describe('filtro no endereço', () => {
 
   it('conta os critérios ativos', () => {
     expect(filterCount({ tipo: 'despesa', min: 100 })).toBe(2)
+  })
+})
+
+describe('intervalo de datas', () => {
+  // Compra em 28/09, vencimento (fatura) em 05/10.
+  it('usa o vencimento por padrão, com as duas pontas incluídas', () => {
+    expect(pass(tx(), { de: '2026-10-01', ate: '2026-10-05' })).toBe(true)
+    expect(pass(tx(), { de: '2026-10-06' })).toBe(false)
+    expect(pass(tx(), { ate: '2026-10-04' })).toBe(false)
+  })
+
+  it('na visão por data da compra, usa a data da compra', () => {
+    const byPurchase = { ...ctx, by: 'compra' as const }
+    expect(matchesFilter(tx(), { de: '2026-09-01', ate: '2026-09-30' }, byPurchase)).toBe(true)
+    expect(matchesFilter(tx(), { de: '2026-10-01' }, byPurchase)).toBe(false)
+  })
+
+  it('vai e volta pelo endereço; datas inválidas são ignoradas e trocadas são desinvertidas', () => {
+    const params = filterToParams({ de: '2026-09-01', ate: '2026-10-15' })
+    expect(params.toString()).toBe('de=2026-09-01&ate=2026-10-15')
+    expect(parseFilter(params)).toMatchObject({ de: '2026-09-01', ate: '2026-10-15' })
+    expect(parseFilter(new URLSearchParams('de=ontem&ate=2026-10-15')).de).toBeUndefined()
+    expect(parseFilter(new URLSearchParams('de=2026-10-15&ate=2026-09-01'))).toMatchObject({ de: '2026-09-01', ate: '2026-10-15' })
   })
 })

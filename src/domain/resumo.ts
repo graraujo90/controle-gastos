@@ -86,7 +86,10 @@ export function expenseBreakdown(
     if (!bySub.has(t.categoryId)) bySub.set(t.categoryId, new Map())
     add(bySub.get(t.categoryId)!, t.subcategoryId ?? '', value)
   }
-  const categories = shares(byCategory, total).map((c) => ({ ...c, subs: shares(bySub.get(c.id)!, c.total) }))
+  // Compra e estorno que se anulam (ou minha parte zero) não deixam linha com R$ 0,00.
+  const categories = shares(byCategory, total)
+    .filter((c) => c.total !== 0)
+    .map((c) => ({ ...c, subs: shares(bySub.get(c.id)!, c.total).filter((s) => s.total !== 0) }))
   return { total, paid, categories }
 }
 

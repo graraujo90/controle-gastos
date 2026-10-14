@@ -43,7 +43,9 @@ export function FiltroModal({ filter, categories, methods, onApply, onClose }: P
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    onApply(draft)
+    // Datas trocadas: vale o intervalo entre elas.
+    const swapped = draft.de && draft.ate && draft.de > draft.ate
+    onApply(swapped ? { ...draft, de: draft.ate, ate: draft.de } : draft)
   }
 
   return (
@@ -127,6 +129,22 @@ export function FiltroModal({ filter, categories, methods, onApply, onClose }: P
             <label className="label" htmlFor="ft-max">Valor máximo</label>
             <MoneyInput id="ft-max" value={draft.max ?? 0} onChange={(v) => set({ max: v || undefined })} />
           </div>
+        </div>
+
+        <div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="ft-de">De</label>
+              <input id="ft-de" type="date" className="field" value={draft.de ?? ''} onChange={(e) => set({ de: e.target.value || undefined })} />
+            </div>
+            <div>
+              <label className="label" htmlFor="ft-ate">Até</label>
+              <input id="ft-ate" type="date" className="field" value={draft.ate ?? ''} onChange={(e) => set({ ate: e.target.value || undefined })} />
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Usa a data escolhida em "Ver por" (vencimento ou compra). Com datas, a lista ignora o mês e o ano selecionados.
+          </p>
         </div>
 
         <div>

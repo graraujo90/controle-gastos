@@ -40,6 +40,10 @@ function storedView(): ViewBy {
 
 type Item = Purchase<Transaction>
 
+const dayMonthYear = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+const rangeLabel = ({ de, ate }: TxFilter) =>
+  de && ate ? `De ${dayMonthYear(de)} a ${dayMonthYear(ate)}` : de ? `A partir de ${dayMonthYear(de)}` : `Até ${dayMonthYear(ate ?? '')}`
+
 export function LancamentosPage() {
   const { month, setMonth, openForm } = useApp()
   // O filtro e o período ficam no endereço, para as outras telas abrirem a lista já filtrada.
@@ -57,7 +61,13 @@ export function LancamentosPage() {
   // "Em atraso" olha tudo que está vencido, de qualquer mês; aí período e data da compra não se aplicam.
   const overdue = filter.situacao === 'atrasado'
   const listBy: ViewBy = overdue ? 'vencimento' : view
-  const { transactions, categories, methods, loading } = useMonthData(month, listBy, overdue ? 'atrasados' : period)
+  // Intervalo de datas também deixa o seletor de mês e ano de lado.
+  const ranged = !overdue && !!(filter.de || filter.ate)
+  const { transactions, categories, methods, loading } = useMonthData(
+    month,
+    listBy,
+    overdue ? 'atrasados' : ranged ? { de: filter.de, ate: filter.ate } : period,
+  )
 
   const apply = (next: TxFilter, nextPeriod: Period = period) =>
     setParams(filterToParams(next, nextPeriod), { replace: true })
@@ -76,8 +86,9 @@ export function LancamentosPage() {
       today: todayISO(),
       creditIds: new Set([...methods.values()].filter((m) => m.kind === 'credito').map((m) => m.id)),
       categoryNames: new Map([...categories.values()].map((c) => [c.id, c.name])),
+      by: listBy,
     }),
-    [categories, methods],
+    [categories, methods, listBy],
   )
 
   const dateOf = (t: Transaction) => (listBy === 'compra' ? t.date : t.dueDate)
@@ -131,7 +142,7 @@ export function LancamentosPage() {
   }
 
   // Mês: agrupa por dia. Ano e "em atraso": por mês e, dentro dele, por dia.
-  const byMonth = period === 'ano' || overdue
+  const byMonth = period === 'ano' || overdue || ranged
   const groups = new Map<string, Map<string, Item[]>>()
   for (const p of visible) {
     const date = dateOf(p.tx)
@@ -162,6 +173,7 @@ export function LancamentosPage() {
   tag(filter.texto, `"${filter.texto}"`, { ...filter, texto: undefined })
   tag(filter.parcelado, 'Parceladas', { ...filter, parcelado: undefined })
   tag(filter.recorrente, 'Recorrentes', { ...filter, recorrente: undefined })
+  tag(ranged, rangeLabel(filter), { ...filter, de: undefined, ate: undefined })
 
   const quick = (changes: Pick<TxFilter, 'tipo' | 'pendencia'>) =>
     // Trocar o botão rápido descarta a situação, que poderia contradizê-lo (ex.: "confirmados" com "a pagar").
@@ -185,7 +197,7 @@ export function LancamentosPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-200/60 p-1">
+          <div className={`grid grid-cols-2 gap-1 rounded-lg bg-slate-200/60 p-1 ${ranged ? 'hidden' : ''}`}>
             {(['mes', 'ano'] as const).map((p) => (
               <button
                 key={p}
@@ -198,7 +210,21 @@ export function LancamentosPage() {
             ))}
           </div>
 
-          {period === 'mes' ? (
+          {ranged ? (
+            <div className="card flex items-center gap-3 p-3">
+              <p className="flex-1 text-sm text-slate-600">
+                <span className="font-semibold text-slate-900">{rangeLabel(filter)}</span>
+                {' · '}pela data {listBy === 'compra' ? 'da compra' : 'do vencimento'}
+              </p>
+              <button
+                className="btn btn-ghost !p-2"
+                onClick={() => apply({ ...filter, de: undefined, ate: undefined })}
+                aria-label="Tirar o intervalo de datas"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          ) : period === 'mes' ? (
             <MonthPicker />
           ) : (
             <YearPicker year={Number(month.slice(0, 4))} onChange={(y) => setMonth(`${y}-${month.slice(5, 7)}`)} />

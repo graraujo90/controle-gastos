@@ -10,11 +10,20 @@ export type ViewBy = 'vencimento' | 'compra'
  * O que carregar: o mês, o ano inteiro desse mês, ou tudo que está vencido e não confirmado
  * (de qualquer período — é a lista de "em atraso").
  */
-export type Scope = 'mes' | 'ano' | 'atrasados'
+export type Scope = 'mes' | 'ano' | 'atrasados' | { de?: string; ate?: string }
 
 /** Lançamentos do período, mais os cadastros indexados por id. Os totais do app usam sempre 'vencimento'. */
 export function useMonthData(month: string, by: ViewBy = 'vencimento', scope: Scope = 'mes') {
+  // Intervalo de datas (filtro da lista): pela data do vencimento ou da compra; ponta vazia = sem limite.
+  const range = typeof scope === 'object' ? scope : undefined
+  const key = range ? `${range.de ?? ''}|${range.ate ?? ''}` : scope
   const transactions = useLiveQuery(() => {
+    if (range) {
+      return db.transactions
+        .where(by === 'compra' ? 'date' : 'dueDate')
+        .between(range.de ?? '0000-00-00', range.ate ?? '9999-99-99', true, true)
+        .toArray()
+    }
     if (scope === 'atrasados') {
       return db.transactions.where('dueDate').below(todayISO()).filter((t) => !t.paid).toArray()
     }
@@ -26,7 +35,7 @@ export function useMonthData(month: string, by: ViewBy = 'vencimento', scope: Sc
     }
     const [from, to] = scope === 'mes' ? [`${month}-01`, `${month}-31`] : [`${year}-01-01`, `${year}-12-31`]
     return db.transactions.where('date').between(from, to, true, true).toArray()
-  }, [month, by, scope])
+  }, [month, by, key])
   const categoryList = useLiveQuery(() => db.categories.toArray(), [])
   const methodList = useLiveQuery(() => db.paymentMethods.toArray(), [])
 
