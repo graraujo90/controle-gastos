@@ -1,4 +1,5 @@
-import { CircleAlert, CircleCheck, Circle, Repeat } from 'lucide-react'
+import { Check, CircleAlert, CircleCheck, Circle, Repeat } from 'lucide-react'
+import { useRef } from 'react'
 import { useApp } from '../../app/AppContext'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { TYPE_STYLE } from '../../components/typeStyle'
@@ -16,10 +17,37 @@ interface Props {
   view?: ViewBy
   /** Na visão por data da compra, uma compra parcelada aparece uma vez só, com o total. */
   purchase?: { total: number; count: number; paidCount: number }
+  /** Seleção de vários: com ela, tocar marca a linha, e um toque longo liga o modo de seleção. */
+  select?: { active: boolean; selected: boolean; toggle: () => void; start: () => void }
 }
 
-export function TransactionRow({ tx, categories, methods, view, purchase }: Props) {
+const LONG_PRESS_MS = 500
+
+export function TransactionRow({ tx, categories, methods, view, purchase, select }: Props) {
   const { openForm } = useApp()
+  const timer = useRef<number | undefined>(undefined)
+  const longPressed = useRef(false)
+
+  function startPress() {
+    longPressed.current = false
+    if (!select || select.active) return
+    timer.current = window.setTimeout(() => {
+      longPressed.current = true
+      select.start()
+      navigator.vibrate?.(20)
+    }, LONG_PRESS_MS)
+  }
+  const cancelPress = () => window.clearTimeout(timer.current)
+
+  function click() {
+    // O toque longo já ligou a seleção; soltar o dedo não deve abrir o lançamento.
+    if (longPressed.current) {
+      longPressed.current = false
+      return
+    }
+    if (select?.active) select.toggle()
+    else openForm(tx)
+  }
   const category = categories.get(tx.categoryId)
   const sub = tx.subcategoryId ? categories.get(tx.subcategoryId) : undefined
   const method = methods.get(tx.paymentMethodId)
@@ -52,8 +80,17 @@ export function TransactionRow({ tx, categories, methods, view, purchase }: Prop
   const how = join([grouped ? `em ${purchase.count}×` : undefined, method?.name, otherDate])
 
   return (
-    <div className="flex items-center hover:bg-slate-50">
-      <button className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-1 text-left" onClick={() => openForm(tx)}>
+    <div className={`flex items-center ${select?.selected ? 'bg-slate-100' : 'hover:bg-slate-50'}`}>
+      <button
+        className="flex min-w-0 flex-1 select-none items-center gap-3 py-3 pl-4 pr-1 text-left [-webkit-touch-callout:none]"
+        onClick={click}
+        onPointerDown={startPress}
+        onPointerUp={cancelPress}
+        onPointerLeave={cancelPress}
+        onPointerCancel={cancelPress}
+        onContextMenu={(e) => select && e.preventDefault()}
+        aria-pressed={select?.active ? select.selected : undefined}
+      >
         <CategoryIcon category={sub ?? category} parent={sub ? category : undefined} />
         <span className="min-w-0 flex-1">
           <span className="flex items-start gap-1.5 font-medium leading-snug">
@@ -90,7 +127,17 @@ export function TransactionRow({ tx, categories, methods, view, purchase }: Prop
           )}
         </span>
       </button>
-      {grouped ? (
+      {select?.active ? (
+        <span className="flex w-[46px] shrink-0 justify-center" aria-hidden>
+          <span
+            className={`flex h-[22px] w-[22px] items-center justify-center rounded-md border-2 ${
+              select.selected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300'
+            }`}
+          >
+            {select.selected && <Check size={14} strokeWidth={3} />}
+          </span>
+        </span>
+      ) : grouped ? (
         // Cada parcela é confirmada na sua fatura ou vencimento; aqui só o andamento.
         <span
           className="w-[46px] shrink-0 text-center text-xs tabular-nums text-slate-500"

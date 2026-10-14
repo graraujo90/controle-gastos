@@ -354,6 +354,28 @@ export const setInvoicePaid = (paymentMethodId: string, month: string, paid: boo
 
 export const deleteTransaction = (id: string) => remove('transactions', [id])
 
+// ---------- vários lançamentos de uma vez ----------
+
+export const deleteTransactions = (ids: string[]) => remove('transactions', ids)
+
+/** Confirma ou desfaz vários lançamentos. Despesa no cartão segue a regra de sempre: vale a fatura inteira. */
+export async function setPaidMany(txs: Transaction[], paid: boolean): Promise<void> {
+  const credit = new Set((await db.paymentMethods.toArray()).filter((m) => m.kind === 'credito').map((m) => m.id))
+  const onInvoice = (t: Transaction) => credit.has(t.paymentMethodId) && t.type === 'despesa'
+  const invoices = new Map(txs.filter(onInvoice).map((t) => [`${t.paymentMethodId}|${t.month}`, t]))
+  const stamp = now()
+  await db.transaction('rw', db.transactions, async () => {
+    await db.transactions.bulkUpdate(
+      txs.filter((t) => !onInvoice(t)).map((t) => ({ key: t.id, changes: { paid, updatedAt: stamp } })),
+    )
+    for (const t of invoices.values()) await setInvoicePaid(t.paymentMethodId, t.month, paid)
+  })
+}
+
+/** Troca categoria e subcategoria de vários lançamentos (do mesmo tipo). */
+export const setCategoryMany = (ids: string[], categoryId: string, subcategoryId: string | null) =>
+  db.transactions.bulkUpdate(ids.map((key) => ({ key, changes: { categoryId, subcategoryId, updatedAt: now() } })))
+
 /** Alcance de uma alteração numa compra parcelada, a partir da parcela aberta. */
 export type InstallmentScope = 'proximas' | 'todas'
 

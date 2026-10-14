@@ -1,9 +1,11 @@
-import { SlidersHorizontal, X } from 'lucide-react'
+import { CircleCheck, ListChecks, SlidersHorizontal, Tag, Trash2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { MonthPicker } from '../../components/MonthPicker'
 import { YearPicker } from '../../components/YearPicker'
+import { deleteTransactions, setCategoryMany, setPaidMany } from '../../db/repo'
 import { TX_LABEL_PLURAL, TX_TYPES, type Transaction, type TxType } from '../../db/types'
 import type { PendingKind } from '../../domain/contas'
 import {
@@ -13,6 +15,7 @@ import {
 import { groupPurchases, type Purchase } from '../../domain/parcelas'
 import { summarize } from '../../domain/resumo'
 import { dayLabel, formatBRL, monthLabel, monthOf, todayISO } from '../../lib/format'
+import { CategoriaLoteModal } from './CategoriaLoteModal'
 import { FiltroModal, SITUATION_LABEL } from './FiltroModal'
 import { TransactionRow } from './TransactionRow'
 import { useMonthData, type ViewBy } from './useMonthData'
@@ -46,6 +49,10 @@ export function LancamentosPage() {
   const period = parsePeriod(params)
   const [view, setView] = useState<ViewBy>(storedView)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // Seleção de vários: guarda a linha (o lançamento que a representa); só vale o que está visível.
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [batch, setBatch] = useState<'excluir' | 'categoria' | null>(null)
 
   // "Em atraso" olha tudo que está vencido, de qualquer mês; aí período e data da compra não se aplicam.
   const overdue = filter.situacao === 'atrasado'
@@ -87,6 +94,41 @@ export function LancamentosPage() {
   )
   const totalsOf = (list: Item[]) => summarize(list.map((p) => ({ type: p.tx.type, amount: p.total, resgate: p.tx.resgate })))
   const totals = totalsOf(visible)
+
+  // Uma compra parcelada agrupada (visão por data da compra) leva todas as parcelas dela.
+  const members = (p: Item) =>
+    p.count > 1 ? sorted.filter((t) => t.installmentGroupId === p.tx.installmentGroupId) : [p.tx]
+  const chosenItems = visible.filter((p) => selected.has(p.tx.id))
+  const chosen = chosenItems.flatMap(members)
+  const chosenTotal = chosen.reduce((sum, t) => sum + t.amount, 0)
+  const allPaid = chosen.length > 0 && chosen.every((t) => t.paid)
+  const mixedTypes = new Set(chosen.map((t) => t.type)).size > 1
+  const allVisibleChosen = visible.length > 0 && chosenItems.length === visible.length
+
+  function stopSelecting() {
+    setSelecting(false)
+    setSelected(new Set())
+  }
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const rowSelect = (p: Item) => ({
+    active: selecting,
+    selected: selected.has(p.tx.id),
+    toggle: () => toggle(p.tx.id),
+    start: () => {
+      setSelecting(true)
+      setSelected(new Set([p.tx.id]))
+    },
+  })
+  async function togglePaid() {
+    await setPaidMany(chosen, !allPaid)
+    stopSelecting()
+  }
 
   // Mês: agrupa por dia. Ano e "em atraso": por mês e, dentro dele, por dia.
   const byMonth = period === 'ano' || overdue
@@ -222,13 +264,33 @@ export function LancamentosPage() {
         </div>
       )}
 
-      {visible.length > 0 && (
-        <p className="px-1 text-xs text-slate-500">
+      {selecting ? (
+        <div className="flex items-center gap-2 px-1 text-sm">
+          <button className="btn btn-ghost !p-1.5" onClick={stopSelecting} aria-label="Sair da seleção">
+            <X size={18} />
+          </button>
+          <span className="flex-1 font-semibold">
+            {chosen.length} {chosen.length === 1 ? 'selecionado' : 'selecionados'}
+          </span>
+          <button
+            className="font-semibold text-slate-600 hover:underline"
+            onClick={() => setSelected(allVisibleChosen ? new Set() : new Set(visible.map((p) => p.tx.id)))}
+          >
+            {allVisibleChosen ? 'Desmarcar todos' : 'Selecionar todos'}
+          </button>
+        </div>
+      ) : visible.length > 0 && (
+        <div className="flex items-start gap-2 px-1">
+        <p className="flex-1 text-xs text-slate-500">
           {visible.length} {visible.length === 1 ? 'lançamento' : 'lançamentos'}
           {totals.receitas !== 0 && <> · Receitas <span className="font-semibold text-emerald-600">{formatBRL(totals.receitas)}</span></>}
           {totals.despesas !== 0 && <> · Despesas <span className="font-semibold text-rose-600">{formatBRL(totals.despesas)}</span></>}
           {totals.investimentos !== 0 && <> · Investimentos <span className="font-semibold text-indigo-600">{formatBRL(totals.investimentos)}</span></>}
         </p>
+          <button className="flex shrink-0 items-center gap-1 text-xs font-semibold text-slate-600 hover:underline" onClick={() => setSelecting(true)}>
+            <ListChecks size={14} /> Selecionar
+          </button>
+        </div>
       )}
 
       {!loading && visible.length === 0 && (
@@ -266,7 +328,15 @@ export function LancamentosPage() {
                 <h3 className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{dayLabel(date)}</h3>
                 <div className="card divide-y divide-slate-100 overflow-hidden">
                   {dayItems.map((p) => (
-                    <TransactionRow key={p.tx.id} tx={p.tx} categories={categories} methods={methods} view={listBy} purchase={p} />
+                    <TransactionRow
+                      key={p.tx.id}
+                      tx={p.tx}
+                      categories={categories}
+                      methods={methods}
+                      view={listBy}
+                      purchase={p}
+                      select={rowSelect(p)}
+                    />
                   ))}
                 </div>
               </section>
@@ -274,6 +344,56 @@ export function LancamentosPage() {
           </div>
         )
       })}
+
+      {selecting && (
+        // No celular cobre a barra de navegação enquanto a seleção está ligada.
+        <div className="fixed inset-x-0 bottom-0 z-50 flex border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:inset-x-auto md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:rounded-xl md:border md:shadow-lg">
+          <BatchButton label="Excluir" icon={Trash2} className="text-rose-600" disabled={chosen.length === 0} onClick={() => setBatch('excluir')} />
+          <BatchButton label={allPaid ? 'Desfazer' : 'Confirmar'} icon={CircleCheck} disabled={chosen.length === 0} onClick={() => void togglePaid()} />
+          <BatchButton
+            label="Categoria"
+            icon={Tag}
+            disabled={chosen.length === 0 || mixedTypes}
+            title={mixedTypes ? 'Escolha lançamentos de um tipo só' : undefined}
+            onClick={() => setBatch('categoria')}
+          />
+        </div>
+      )}
+
+      {batch === 'excluir' && (
+        <ConfirmDialog
+          title="Excluir lançamentos"
+          message={
+            <>
+              Excluir {chosen.length} {chosen.length === 1 ? 'lançamento' : 'lançamentos'}, somando{' '}
+              <span className="font-semibold">{formatBRL(chosenTotal)}</span>?
+              {chosen.length > chosenItems.length && ' Inclui todas as parcelas das compras escolhidas.'}
+            </>
+          }
+          confirmLabel="Excluir"
+          danger
+          onClose={() => setBatch(null)}
+          onConfirm={async () => {
+            await deleteTransactions(chosen.map((t) => t.id))
+            setBatch(null)
+            stopSelecting()
+          }}
+        />
+      )}
+
+      {batch === 'categoria' && chosen.length > 0 && (
+        <CategoriaLoteModal
+          type={chosen[0].type}
+          count={chosen.length}
+          categories={categories}
+          onClose={() => setBatch(null)}
+          onApply={async (categoryId, subcategoryId) => {
+            await setCategoryMany(chosen.map((t) => t.id), categoryId, subcategoryId)
+            setBatch(null)
+            stopSelecting()
+          }}
+        />
+      )}
 
       {filtersOpen && (
         <FiltroModal
@@ -288,5 +408,24 @@ export function LancamentosPage() {
         />
       )}
     </div>
+  )
+}
+
+function BatchButton({ label, icon: Icon, className = 'text-slate-700', ...rest }: {
+  label: string
+  icon: typeof Trash2
+  className?: string
+  disabled?: boolean
+  title?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 px-4 py-2 text-[11px] font-semibold disabled:opacity-40 md:px-6 ${className}`}
+      {...rest}
+    >
+      <Icon size={20} />
+      {label}
+    </button>
   )
 }
