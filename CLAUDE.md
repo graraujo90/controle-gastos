@@ -41,10 +41,26 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
   Qualquer número do Início ou dos relatórios que leve à lista deve usar `lancamentosLink()`, nunca estado interno.
   "Em atraso" ignora o período e mostra tudo que está vencido e não confirmado.
 - Parcelas: uma compra em N vezes vira N lançamentos ligados por `installmentGroupId`; centavos que sobram vão na 1ª.
+  Editar ou excluir uma parcela pergunta o alcance: **só esta** (padrão), esta e as próximas, ou todas. Na edição,
+  categoria, subcategoria, forma e descrição vão para o alcance; o valor muda só na parcela aberta.
+- Mover de fatura (`invoiceShift`, só no crédito, até uma fatura para cada lado): para quando o banco fecha em dia
+  diferente do cadastrado. Fica guardado no lançamento e se mantém ao mudar a data; numa compra parcelada, todas as
+  parcelas andam juntas. Recorrência não se move.
+- **Minha parte** (`myShare`, conta dividida) e **estorno** (`estorno: true`), só em despesas. Uma regra única em
+  `domain/resumo.ts`: `spent()` (minha parte; estorno negativo) vale para resultado, orçamento, categorias,
+  relatórios e pendências; `invoiceValue()` (valor cheio; estorno negativo) vale para fatura e limite do cartão.
+  Parcelas dividem a minha parte pela mesma regra do valor; recorrência mantém a parte em cada ocorrência. O
+  estorno é lançado na data e na fatura em que aparece, com a categoria da compra.
+- **Compra dividida em categorias** (`domain/divisao.ts`): várias despesas ligadas por `splitGroupId`, com a mesma
+  data, forma e situação de pagamento; só salva quando as partes somam o total. Abrir uma parte edita a divisão
+  inteira; confirmar uma parte confirma todas. Só para compra à vista (sem parcelas, repetição ou estorno).
+- Na lista dá para selecionar vários (botão ou toque longo): excluir, confirmar/desfazer e mudar categoria (só
+  lançamentos de um tipo).
 - Recorrência (`domain/recorrencia.ts`, tabela `recurrences`): semanal, quinzenal ou mensal, com N vezes ou sem fim.
   Os lançamentos são criados de verdade, com id previsível `regra:número` (dois aparelhos não duplicam) e carimbo de
   data da regra. Sem fim mantém 12 meses à frente (`extendRecurrences`, ao abrir e após sincronizar). O contador
-  `generated` só cresce: ocorrência apagada não volta. "Este e os próximos" altera os seguintes ainda não confirmados.
+  `generated` só cresce: ocorrência apagada não volta. "Este e os próximos" altera os seguintes ainda não confirmados;
+  excluir "este e os próximos" encerra a repetição. O padrão ao editar e excluir é **só este**.
 - Arquivos de backup e sincronização estão no formato 2 (`FILE_FORMAT`); versão antiga do app recusa e pede atualização.
 - Confirmação (`paid`) vale para os três tipos: despesa paga, receita recebida, investimento aplicado ou resgatado.
   **Pendentes contam no resultado do mês como previsto**; o Início mostra à parte o realizado e as pendências.
@@ -76,6 +92,9 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
   O dono cria a pasta; um convidado entra pelo link de compartilhamento, com a própria conta Microsoft.
 - Junção registro a registro pelo `updatedAt`, com registro de exclusões (`deletions`); regras em `domain/sync.ts`.
 - Toda exclusão de dado sincronizado passa por `remove()` em `repo.ts`, para deixar o registro de exclusão.
+- A Microsoft só renova o acesso sozinha por 24 h em apps web. Vencido, o app tenta ao abrir uma ida e volta **sem
+  tela** (`prompt: 'none'`, conta indicada), uma vez por abertura e só nos primeiros 20 s (nunca com formulário
+  aberto). Se falhar, fica o aviso; "Entrar de novo" vai à Microsoft já com a conta, sem a tela de escolha.
 - Pendente de validação com o dono: convidado (conta da esposa) lendo e gravando na pasta compartilhada.
 
 ## Armadilhas do ambiente
