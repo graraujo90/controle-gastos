@@ -304,8 +304,11 @@ export async function updateFollowing(tx: Transaction, changes: RecurringChanges
       .modify((t) => {
         Object.assign(t, changes, { updatedAt: stamp })
         // Trocar para ou de cartão de crédito muda em que fatura cada ocorrência cai.
-        if (isCredit(method)) t.dueDate = dueDateFor(t.date, method)
-        else if (wasCredit) t.dueDate = t.date
+        if (isCredit(method)) t.dueDate = dueDateFor(t.date, method, t.invoiceShift)
+        else if (wasCredit) {
+          t.dueDate = t.date
+          delete t.invoiceShift
+        }
         t.month = monthOf(t.dueDate)
       })
   })
@@ -406,9 +409,30 @@ export async function updateInstallmentGroup(
       Object.assign(t, changes, { updatedAt: stamp })
       if (!methodChanged) return
       const offset = (t.installmentNumber ?? 1) - 1
-      if (isCredit(method)) t.dueDate = addMonthsToDate(dueDateFor(t.date, method), offset)
-      else if (wasCredit) t.dueDate = addMonthsToDate(t.date, offset)
+      if (isCredit(method)) t.dueDate = addMonthsToDate(dueDateFor(t.date, method, t.invoiceShift), offset)
+      else {
+        delete t.invoiceShift // fora do cartão não há fatura para mover
+        if (wasCredit) t.dueDate = addMonthsToDate(t.date, offset)
+      }
       t.month = monthOf(t.dueDate)
+    })
+}
+
+/** Move a compra parcelada inteira para a fatura anterior ou seguinte: todas as parcelas andam juntas. */
+export async function shiftInstallments(tx: Transaction, paymentMethodId: string, shift: number): Promise<void> {
+  if (!tx.installmentGroupId) return
+  const method = await db.paymentMethods.get(paymentMethodId)
+  if (!isCredit(method)) return
+  const stamp = now()
+  await db.transactions
+    .where('installmentGroupId')
+    .equals(tx.installmentGroupId)
+    .filter((t) => t.id !== tx.id) // a parcela aberta já foi gravada pelo formulário
+    .modify((t) => {
+      t.invoiceShift = shift || undefined
+      t.dueDate = addMonthsToDate(dueDateFor(t.date, method, shift), (t.installmentNumber ?? 1) - 1)
+      t.month = monthOf(t.dueDate)
+      t.updatedAt = stamp
     })
 }
 
@@ -423,5 +447,3 @@ export async function deleteInstallments(tx: Transaction, scope: InstallmentScop
   await remove('transactions', ids)
 }
 
-export const deleteInstallmentGroup = async (groupId: string) =>
-  remove('transactions', await db.transactions.where('installmentGroupId').equals(groupId).primaryKeys())

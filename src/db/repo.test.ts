@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { db } from './db'
 import {
   deleteInstallments, deleteTransactions, resetAll, saveInstallments, saveMethod, saveTransaction, setCategoryMany,
-  setPaidMany, updateInstallmentGroup,
+  setPaidMany, shiftInstallments, updateInstallmentGroup,
 } from './repo'
 import type { Transaction } from './types'
 
@@ -64,6 +64,24 @@ describe('alcance em compra parcelada', () => {
     // Compra em 05/10 com fechamento dia 25: 1ª fatura vence 05/11; a 2ª parcela cai em 05/12, e assim por diante.
     expect(others.map((t) => t.dueDate)).toEqual(['2026-12-05', '2027-01-05', '2027-02-05'])
     expect(others.map((t) => t.month)).toEqual(['2026-12', '2027-01', '2027-02'])
+  })
+
+  it('mover de fatura leva todas as parcelas juntas, e voltar desfaz', async () => {
+    const [first] = await buyInFour()
+    const cardId = await saveMethod({ name: 'Cartão teste', kind: 'credito', use: 'pagamento', closingDay: 25, dueDay: 5, archived: false })
+    await updateInstallmentGroup(first, changesFrom(first, { paymentMethodId: cardId }), 'todas')
+    const third = (await byNumber())[2]
+
+    await shiftInstallments(third, cardId, -1)
+    const moved = (await byNumber()).filter((t) => t.id !== third.id)
+    // Sem o ajuste: 05/11, 05/12, 05/01, 05/02. Uma fatura antes (a 3ª é gravada pelo formulário):
+    expect(moved.map((t) => t.dueDate)).toEqual(['2026-10-05', '2026-11-05', '2027-01-05'])
+    expect(moved.every((t) => t.invoiceShift === -1)).toBe(true)
+
+    await shiftInstallments(third, cardId, 0)
+    const back = (await byNumber()).filter((t) => t.id !== third.id)
+    expect(back.map((t) => t.dueDate)).toEqual(['2026-11-05', '2026-12-05', '2027-02-05'])
+    expect(back.every((t) => t.invoiceShift === undefined)).toBe(true)
   })
 
   it('excluir "esta e as próximas" mantém as anteriores e deixa registro para a sincronização', async () => {

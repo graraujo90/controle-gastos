@@ -10,6 +10,22 @@ describe('dueDateFor', () => {
     expect(dueDateFor('2026-10-26', card)).toBe('2026-12-05')
   })
 
+  it('compra movida para a fatura anterior ou seguinte', () => {
+    // Banco fechou dia 27 em vez de 25: a compra do dia 26 ainda entrou na fatura de novembro.
+    expect(dueDateFor('2026-10-26', card, -1)).toBe('2026-11-05')
+    expect(dueDateFor('2026-10-24', card, 1)).toBe('2026-12-05')
+  })
+
+  it('compra movida mantém o ajuste ao mudar a data e vira o ano', () => {
+    expect(dueDateFor('2026-11-24', card, 1)).toBe('2027-01-05')
+    expect(dueDateFor('2026-12-26', card, -1)).toBe('2027-01-05')
+  })
+
+  it('o ajuste fica limitado a uma fatura e não vale fora do crédito', () => {
+    expect(dueDateFor('2026-10-09', card, 5)).toBe('2026-12-05')
+    expect(dueDateFor('2026-10-09', { kind: 'pix' } as PaymentMethod, 1)).toBe('2026-10-09')
+  })
+
   it('demais formas: a própria data', () => {
     expect(dueDateFor('2026-10-09', { kind: 'pix' } as PaymentMethod)).toBe('2026-10-09')
     expect(dueDateFor('2026-10-09', undefined)).toBe('2026-10-09')

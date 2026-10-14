@@ -84,6 +84,8 @@ export interface Transaction extends Base {
   installmentGroupId?: string
   installmentNumber?: number
   installmentTotal?: number
+  /** Só no cartão de crédito: compra movida para a fatura anterior (−1) ou seguinte (+1). */
+  invoiceShift?: number
 }
 
 /**
