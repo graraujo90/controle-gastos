@@ -183,6 +183,7 @@ export async function saveInstallments(
       ...input,
       id: crypto.randomUUID(),
       amount: p.amount,
+      myShare: p.myShare, // a minha parte de cada parcela, não a do total
       dueDate: p.dueDate,
       month: monthOf(p.dueDate),
       paid: p.number === 1 ? input.paid : p.dueDate < todayISO(),
@@ -222,6 +223,7 @@ function buildOccurrences(rule: Recurrence, numbers: number[], method: PaymentMe
       paymentMethodId: rule.paymentMethodId,
       description: rule.description,
       resgate: rule.resgate,
+      ...(rule.myShare !== undefined && { myShare: rule.myShare }),
       date,
       dueDate,
       month: monthOf(dueDate),
@@ -268,6 +270,7 @@ export async function saveRecurring(
     paymentMethodId: input.paymentMethodId,
     description: input.description,
     resgate: input.resgate,
+    myShare: input.myShare,
     createdAt: stamp,
     updatedAt: stamp,
   }
@@ -283,7 +286,7 @@ export async function extendRecurrences(): Promise<void> {
 
 type RecurringChanges = Pick<
   Transaction,
-  'type' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'resgate'
+  'type' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'resgate' | 'myShare'
 >
 
 /**

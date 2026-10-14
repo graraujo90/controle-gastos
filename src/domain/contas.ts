@@ -1,5 +1,6 @@
 import type { Transaction } from '../db/types'
 import { monthOf } from '../lib/format'
+import { spent } from './resumo'
 
 export interface Payables {
   overdueCount: number
@@ -20,7 +21,7 @@ export const pendingKind = (t: Pick<Transaction, 'type' | 'resgate'>): PendingKi
 
 /** Pendências separadas por direção do dinheiro. `pending` deve conter só lançamentos com paid = false. */
 export function pendingByKind(
-  pending: Pick<Transaction, 'type' | 'resgate' | 'amount' | 'dueDate'>[],
+  pending: Pick<Transaction, 'type' | 'resgate' | 'amount' | 'dueDate' | 'myShare' | 'estorno'>[],
   today: string,
   month: string,
 ): Record<PendingKind, Payables> {
@@ -30,22 +31,24 @@ export function pendingByKind(
 
 /** Resumo de lançamentos ainda não confirmados. `unpaid` deve conter só lançamentos com paid = false. */
 export function payables(
-  unpaid: Pick<Transaction, 'amount' | 'dueDate'>[],
+  unpaid: Pick<Transaction, 'type' | 'amount' | 'dueDate' | 'myShare' | 'estorno'>[],
   today: string,
   month: string,
 ): Payables {
   const p: Payables = { overdueCount: 0, overdueTotal: 0, todayCount: 0, todayTotal: 0, monthCount: 0, monthTotal: 0 }
   for (const t of unpaid) {
+    // Despesa conta a minha parte (o estorno abate); receita e investimento, o valor do lançamento.
+    const value = t.type === 'despesa' ? spent(t) : t.amount
     if (t.dueDate < today) {
       p.overdueCount++
-      p.overdueTotal += t.amount
+      p.overdueTotal += value
     } else if (t.dueDate === today) {
       p.todayCount++
-      p.todayTotal += t.amount
+      p.todayTotal += value
     }
     if (monthOf(t.dueDate) === month) {
       p.monthCount++
-      p.monthTotal += t.amount
+      p.monthTotal += value
     }
   }
   return p

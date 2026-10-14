@@ -92,12 +92,12 @@ export function LancamentosPage() {
   const visible = items.filter((p) =>
     matchesFilter(p.tx, filter, ctx, { amount: p.total, paid: p.paidCount === p.count }),
   )
-  const totalsOf = (list: Item[]) => summarize(list.map((p) => ({ type: p.tx.type, amount: p.total, resgate: p.tx.resgate })))
-  const totals = totalsOf(visible)
-
   // Uma compra parcelada agrupada (visão por data da compra) leva todas as parcelas dela.
   const members = (p: Item) =>
     p.count > 1 ? sorted.filter((t) => t.installmentGroupId === p.tx.installmentGroupId) : [p.tx]
+  // Os totais seguem a regra do orçamento (minha parte, estorno abatendo), não o valor cheio da linha.
+  const totalsOf = (list: Item[]) => summarize(list.flatMap(members))
+  const totals = totalsOf(visible)
   const chosenItems = visible.filter((p) => selected.has(p.tx.id))
   const chosen = chosenItems.flatMap(members)
   const chosenTotal = chosen.reduce((sum, t) => sum + t.amount, 0)

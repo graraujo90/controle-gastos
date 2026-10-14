@@ -1,5 +1,5 @@
 import type { Transaction } from '../db/types'
-import { invested } from './resumo'
+import { counted } from './resumo'
 
 export interface AnnualRow {
   month: string
@@ -18,7 +18,7 @@ export interface AnnualRow {
   percentualInvestido: number | null
 }
 
-type Tx = Pick<Transaction, 'month' | 'type' | 'amount' | 'resgate'>
+type Tx = Pick<Transaction, 'month' | 'type' | 'amount' | 'resgate' | 'myShare' | 'estorno'>
 
 /** Resumo mês a mês do ano. `openingBalance` é o saldo antes do primeiro lançamento do app. */
 export function annualSummary(transactions: Tx[], year: number, openingBalance: number): AnnualRow[] {
@@ -36,12 +36,12 @@ export function annualSummary(transactions: Tx[], year: number, openingBalance: 
   for (const t of transactions) {
     const row = rows.get(t.month)
     if (row) {
-      if (t.type === 'receita') row.receitas += t.amount
-      else if (t.type === 'despesa') row.despesas += t.amount
-      else row.investimentos += invested(t)
+      if (t.type === 'receita') row.receitas += counted(t)
+      else if (t.type === 'despesa') row.despesas += counted(t)
+      else row.investimentos += counted(t)
     } else if (t.month < first) {
       // Anos anteriores entram só no saldo de partida.
-      saldo += t.type === 'receita' ? t.amount : t.type === 'despesa' ? -t.amount : -invested(t)
+      saldo += t.type === 'receita' ? counted(t) : -counted(t)
     }
   }
 

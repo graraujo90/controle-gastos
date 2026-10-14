@@ -31,11 +31,11 @@ describe('pendingByKind', () => {
 
 describe('payables', () => {
   const unpaid = [
-    { amount: 1000, dueDate: '2026-09-20' }, // atrasada, mês anterior
-    { amount: 2000, dueDate: '2026-10-05' }, // atrasada, mês atual
-    { amount: 3000, dueDate: '2026-10-09' }, // vence hoje
-    { amount: 4000, dueDate: '2026-10-25' }, // a vencer no mês
-    { amount: 5000, dueDate: '2026-11-05' }, // mês seguinte
+    { type: 'despesa' as const, amount: 1000, dueDate: '2026-09-20' }, // atrasada, mês anterior
+    { type: 'despesa' as const, amount: 2000, dueDate: '2026-10-05' }, // atrasada, mês atual
+    { type: 'despesa' as const, amount: 3000, dueDate: '2026-10-09' }, // vence hoje
+    { type: 'despesa' as const, amount: 4000, dueDate: '2026-10-25' }, // a vencer no mês
+    { type: 'despesa' as const, amount: 5000, dueDate: '2026-11-05' }, // mês seguinte
   ]
 
   it('separa atrasadas, de hoje e do mês', () => {
@@ -51,5 +51,19 @@ describe('payables', () => {
 
   it('lista vazia zera tudo', () => {
     expect(payables([], '2026-10-09', '2026-10').overdueCount).toBe(0)
+  })
+})
+
+describe('pendências com conta dividida e estorno', () => {
+  it('a pagar conta a minha parte e abate o estorno', () => {
+    const p = payables(
+      [
+        { type: 'despesa', amount: 30000, myShare: 10000, dueDate: '2026-11-05' },
+        { type: 'despesa', amount: 5000, estorno: true, dueDate: '2026-11-05' },
+      ],
+      '2026-10-09',
+      '2026-11',
+    )
+    expect(p.monthTotal).toBe(5000)
   })
 })

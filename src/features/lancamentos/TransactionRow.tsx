@@ -76,8 +76,11 @@ export function TransactionRow({ tx, categories, methods, view, purchase, select
             : undefined // pendente: o status ao lado já mostra a data
   // Duas linhas curtas em vez de uma longa cortada: o quê (categoria) e como (forma, data, situação).
   const join = (parts: (string | undefined)[]) => parts.filter((part) => part && part !== name).join(' · ')
-  const what = join([tx.resgate ? 'Resgate' : undefined, category?.name, sub?.name])
-  const how = join([grouped ? `em ${purchase.count}×` : undefined, method?.name, otherDate])
+  const what = join([tx.resgate ? 'Resgate' : undefined, tx.estorno ? 'Estorno' : undefined, category?.name, sub?.name])
+  // Conta dividida: a linha mostra o valor cheio (o da fatura); no orçamento conta a minha parte.
+  const share =
+    tx.myShare === undefined ? undefined : grouped ? 'conta dividida' : `sua parte ${formatBRL(tx.myShare)}`
+  const how = join([grouped ? `em ${purchase.count}×` : undefined, share, method?.name, otherDate])
 
   return (
     <div className={`flex items-center ${select?.selected ? 'bg-slate-100' : 'hover:bg-slate-50'}`}>
@@ -110,7 +113,7 @@ export function TransactionRow({ tx, categories, methods, view, purchase, select
           <span className="mt-0.5 flex items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{what}</span>
             <span className={`shrink-0 whitespace-nowrap font-semibold tabular-nums ${style.text}`}>
-              {tx.resgate ? '+' : style.sign}
+              {tx.resgate || tx.estorno ? '+' : style.sign}
               {formatBRL(grouped ? purchase.total : tx.amount)}
             </span>
           </span>

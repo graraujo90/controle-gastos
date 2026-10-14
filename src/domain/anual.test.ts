@@ -58,3 +58,19 @@ describe('annualSummary', () => {
     expect(rows.reduce((sum, r) => sum + r.receitas, 0)).toBe(1000000)
   })
 })
+
+describe('annualSummary com conta dividida e estorno', () => {
+  it('despesas do mês usam a minha parte, inclusive no saldo de anos anteriores', () => {
+    const rows = annualSummary(
+      [
+        { month: '2025-12', type: 'despesa', amount: 30000, myShare: 10000 },
+        { month: '2026-01', type: 'despesa', amount: 30000, myShare: 10000 },
+        { month: '2026-01', type: 'despesa', amount: 5000, estorno: true },
+      ],
+      2026,
+      0,
+    )
+    expect(rows[0].saldoInicial).toBe(-10000)
+    expect(rows[0].despesas).toBe(5000)
+  })
+})

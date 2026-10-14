@@ -8,6 +8,7 @@ import { MonthPicker } from '../../components/MonthPicker'
 import { setBudget } from '../../db/repo'
 import type { Category, Transaction } from '../../db/types'
 import { budgetLevel } from '../../domain/orcamento'
+import { spent } from '../../domain/resumo'
 import { formatBRL, monthLabel } from '../../lib/format'
 import { LEVEL_BAR, useBudget, type BudgetRow } from './useBudget'
 
@@ -47,7 +48,7 @@ function BudgetForm({ row, month, expenses, categories, onClose }: FormProps) {
   for (const t of expenses) {
     if (t.categoryId !== row.category.id) continue
     const key = t.subcategoryId ?? ''
-    bySub.set(key, (bySub.get(key) ?? 0) + t.amount)
+    bySub.set(key, (bySub.get(key) ?? 0) + spent(t))
   }
   const subs = [...bySub].sort((a, b) => b[1] - a[1])
 

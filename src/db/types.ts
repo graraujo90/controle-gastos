@@ -86,6 +86,13 @@ export interface Transaction extends Base {
   installmentTotal?: number
   /** Só no cartão de crédito: compra movida para a fatura anterior (−1) ou seguinte (+1). */
   invoiceShift?: number
+  /**
+   * Só em despesas: conta dividida. `amount` é o valor cheio (o da fatura e do extrato); a minha parte,
+   * em centavos, é o que conta no orçamento. Ausente = a despesa é toda minha.
+   */
+  myShare?: number
+  /** Só em despesas: dinheiro devolvido pelo cartão ou pela loja. Abate da fatura e do gasto do mês. */
+  estorno?: boolean
 }
 
 /**
@@ -112,6 +119,8 @@ export interface Recurrence extends Base {
   paymentMethodId: string
   description: string
   resgate?: boolean
+  /** Conta dividida: a minha parte em cada ocorrência. */
+  myShare?: number
 }
 
 export interface Budget extends Base {

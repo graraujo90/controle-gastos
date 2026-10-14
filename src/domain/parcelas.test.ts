@@ -55,3 +55,19 @@ describe('planInstallments', () => {
     expect(plan.map((p) => p.dueDate)).toEqual(['2027-01-31', '2027-02-28', '2027-03-31'])
   })
 })
+
+describe('planInstallments com a minha parte', () => {
+  it('valor total: a minha parte é dividida pela mesma regra (sobra na 1ª)', () => {
+    const plan = planInstallments(30000, 'total', 3, '2026-11-05', 10000)
+    expect(plan.map((p) => p.myShare)).toEqual([3334, 3333, 3333])
+    expect(plan.map((p) => p.amount)).toEqual([10000, 10000, 10000])
+  })
+
+  it('valor por parcela: a minha parte também é por parcela', () => {
+    expect(planInstallments(10000, 'parcela', 2, '2026-11-05', 4000).map((p) => p.myShare)).toEqual([4000, 4000])
+  })
+
+  it('sem conta dividida, as parcelas não têm minha parte', () => {
+    expect(planInstallments(10000, 'total', 2, '2026-11-05').every((p) => !('myShare' in p))).toBe(true)
+  })
+})

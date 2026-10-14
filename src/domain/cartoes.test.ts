@@ -22,3 +22,13 @@ describe('invoicesByMonth', () => {
     expect(invoice.paid).toBe(false)
   })
 })
+
+describe('fatura com conta dividida e estorno', () => {
+  it('soma o valor cheio e abate o estorno', () => {
+    const [invoice] = invoicesByMonth([
+      { month: '2026-11', amount: 30000, paid: false }, // conta dividida: a fatura cobra o cheio
+      { month: '2026-11', amount: 5000, estorno: true, paid: false },
+    ])
+    expect(invoice.total).toBe(25000)
+  })
+})

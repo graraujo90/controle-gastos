@@ -8,6 +8,7 @@ import { db } from '../../db/db'
 import { setInvoicePaid } from '../../db/repo'
 import type { Category, PaymentMethod, Transaction } from '../../db/types'
 import { invoicesByMonth } from '../../domain/cartoes'
+import { invoiceValue } from '../../domain/resumo'
 import { formatBRL, monthLabel, shortDate, todayISO, withDay } from '../../lib/format'
 import { TransactionRow } from '../lancamentos/TransactionRow'
 
@@ -35,7 +36,7 @@ function CardInvoice({ card, transactions, month, categories, methods }: CardPro
   const dueDate = withDay(month, card.dueDay ?? 1)
   const overdue = !!invoice && !invoice.paid && dueDate < todayISO()
   // Limite comprometido: tudo que ainda não foi pago, incluindo parcelas de faturas futuras.
-  const used = transactions.filter((t) => !t.paid).reduce((sum, t) => sum + t.amount, 0)
+  const used = transactions.filter((t) => !t.paid).reduce((sum, t) => sum + invoiceValue(t), 0)
 
   return (
     <div>
@@ -145,7 +146,7 @@ export function CartoesPage() {
     .filter((m) => m.kind === 'credito' && (!m.archived || (byCard.get(m.id) ?? []).some((t) => !t.paid)))
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
   const total = cards.reduce(
-    (sum, c) => sum + (byCard.get(c.id) ?? []).filter((t) => t.month === month).reduce((s, t) => s + t.amount, 0),
+    (sum, c) => sum + (byCard.get(c.id) ?? []).filter((t) => t.month === month).reduce((s, t) => s + invoiceValue(t), 0),
     0,
   )
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CARDS_ROW, expenseBreakdown, methodBreakdown, summarize, totalsByCategory } from './resumo'
+import { CARDS_ROW, expenseBreakdown, invoiceValue, methodBreakdown, spent, summarize, totalsByCategory } from './resumo'
 
 describe('expenseBreakdown', () => {
   const b = expenseBreakdown([
@@ -104,5 +104,46 @@ describe('totalsByCategory', () => {
       { categoryId: 'b', total: 500 },
       { categoryId: 'a', total: 350 },
     ])
+  })
+})
+
+describe('minha parte e estorno', () => {
+  // Conta do bar de R$ 300 no cartão, minha parte R$ 100; estorno de R$ 50 de uma compra anterior.
+  const bar = { type: 'despesa', amount: 30000, myShare: 10000, categoryId: 'lazer', subcategoryId: null, paid: false, paymentMethodId: 'cartao' } as const
+  const refund = { type: 'despesa', amount: 5000, estorno: true, categoryId: 'lazer', subcategoryId: 'bar', paid: false, paymentMethodId: 'cartao' } as const
+  const market = { type: 'despesa', amount: 20000, categoryId: 'mercado', subcategoryId: null, paid: true, paymentMethodId: 'pix' } as const
+  const salary = { type: 'receita', amount: 500000 } as const
+
+  it('no orçamento conta a minha parte; o estorno abate', () => {
+    expect(spent(bar)).toBe(10000)
+    expect(spent(refund)).toBe(-5000)
+    expect(spent(market)).toBe(20000)
+  })
+
+  it('na fatura vale o valor cheio; o estorno abate', () => {
+    expect(invoiceValue(bar)).toBe(30000)
+    expect(invoiceValue(refund)).toBe(-5000)
+  })
+
+  it('resultado do mês usa a minha parte', () => {
+    const s = summarize([bar, refund, market, salary])
+    expect(s.despesas).toBe(10000 - 5000 + 20000)
+    expect(s.resultado).toBe(500000 - 25000)
+  })
+
+  it('categorias e orçamento usam a minha parte; o estorno abate na categoria da compra', () => {
+    const b = expenseBreakdown([bar, refund, market])
+    expect(b.total).toBe(25000)
+    expect(b.paid).toBe(20000)
+    expect(b.categories.find((c) => c.id === 'lazer')!.total).toBe(5000)
+    expect(totalsByCategory([bar, refund, market])).toEqual([
+      { categoryId: 'mercado', total: 20000 },
+      { categoryId: 'lazer', total: 5000 },
+    ])
+  })
+
+  it('despesas por forma de pagamento usam a minha parte', () => {
+    const rows = methodBreakdown([bar, refund, market], new Set(['cartao']))
+    expect(rows.find((r) => r.id === CARDS_ROW)!.total).toBe(5000)
   })
 })

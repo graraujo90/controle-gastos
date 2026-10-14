@@ -44,6 +44,10 @@ export function TransactionForm({ tx, onClose }: Props) {
   const [methodId, setMethodId] = useState(tx?.paymentMethodId ?? '')
   const [description, setDescription] = useState(tx?.description ?? '')
   const [resgateOn, setResgateOn] = useState(tx?.resgate ?? false)
+  const [estornoOn, setEstornoOn] = useState(tx?.estorno ?? false)
+  // Conta dividida: o valor é o cheio (fatura); a minha parte é o que conta no orçamento.
+  const [splitOn, setSplitOn] = useState(tx?.myShare !== undefined)
+  const [myShare, setMyShare] = useState(tx?.myShare ?? 0)
   // null = segue o padrão (vencimento igual à data; paga se já venceu e não é crédito).
   const [dueManual, setDueManual] = useState<string | null>(tx && tx.dueDate !== tx.date ? tx.dueDate : null)
   const [paidManual, setPaidManual] = useState<boolean | null>(tx ? tx.paid : null)
@@ -81,7 +85,9 @@ export function TransactionForm({ tx, onClose }: Props) {
 
   const expense = type === 'despesa'
   const credit = expense && isCredit(method)
-  const repeating = !tx && repeat !== ''
+  const estorno = expense && estornoOn
+  const repeating = !tx && !estorno && repeat !== ''
+  const share = expense && splitOn ? myShare : undefined
   // Recorrência não se move de fatura: cada ocorrência segue o fechamento cadastrado.
   const invoiceShift = credit && !repeating ? shift : 0
   // No crédito o vencimento é o da fatura; ao editar a parcela N, o da N-ésima fatura.
@@ -95,14 +101,14 @@ export function TransactionForm({ tx, onClose }: Props) {
   const paid = credit ? (tx?.paid ?? dueDate < todayISO()) : (paidManual ?? dueDate <= todayISO())
   // Repetição e parcelamento não se combinam: escolher um esconde o outro.
   const installments =
-    expense && !tx && !repeating ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
+    expense && !tx && !repeating && !estorno ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
   const repeatCount = endless ? undefined : Math.max(2, Math.min(MAX_COUNT, Math.floor(Number(times)) || 2))
   // O que a repetição vai criar agora, para mostrar antes de salvar.
   const occurrences =
     repeating && date
       ? missingOccurrences({ frequency: repeat, startDate: date, count: repeatCount, generated: 0, ended: false }, todayISO())
       : []
-  const plan = installments > 1 && date ? planInstallments(amount, mode, installments, dueDate) : null
+  const plan = installments > 1 && date ? planInstallments(amount, mode, installments, dueDate, share) : null
 
   function changeType(next: TxType) {
     setType(next)
@@ -122,6 +128,7 @@ export function TransactionForm({ tx, onClose }: Props) {
     if (!date || !dueDate) return setError('Informe a data e o vencimento.')
     if (!categoryId) return setError('Escolha uma categoria.')
     if (!methodId) return setError(`Escolha a forma de ${inflow ? 'recebimento' : 'pagamento'}.`)
+    if (share !== undefined && share >= amount) return setError('A sua parte precisa ser menor que o valor da conta.')
     const base = {
       type,
       date,
@@ -132,6 +139,8 @@ export function TransactionForm({ tx, onClose }: Props) {
       paid,
       resgate,
       invoiceShift: invoiceShift || undefined,
+      myShare: share,
+      estorno: estorno || undefined,
     }
     if (repeating) await saveRecurring({ ...base, amount, dueDate }, { frequency: repeat, count: repeatCount })
     else if (plan) await saveInstallments(base, plan)
@@ -150,7 +159,7 @@ export function TransactionForm({ tx, onClose }: Props) {
     if (tx?.recurrenceId && scope === 'proximos') {
       await updateFollowing(tx, {
         type, amount, categoryId, subcategoryId: base.subcategoryId, paymentMethodId: methodId,
-        description: base.description, resgate,
+        description: base.description, resgate, myShare: share,
       })
     }
     // Leva a tela para o mês em que o lançamento entrou (o do vencimento).
@@ -207,6 +216,30 @@ export function TransactionForm({ tx, onClose }: Props) {
             </button>
           ))}
         </div>
+
+        {expense && (
+          <div>
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+              {([false, true] as const).map((value) => (
+                <button
+                  key={String(value)}
+                  type="button"
+                  onClick={() => setEstornoOn(value)}
+                  aria-pressed={estornoOn === value}
+                  className={`rounded-md py-1.5 text-sm font-semibold ${estornoOn === value ? 'seg-on' : 'text-slate-500'}`}
+                >
+                  {value ? 'Estorno' : 'Compra'}
+                </button>
+              ))}
+            </div>
+            {estorno && (
+              <p className="mt-1 text-xs text-slate-500">
+                Dinheiro devolvido. Lance na data e na fatura em que ele aparece, com a categoria da compra: abate da
+                fatura e do gasto daquele mês.
+              </p>
+            )}
+          </div>
+        )}
 
         {type === 'investimento' && (
           <div>
@@ -277,10 +310,34 @@ export function TransactionForm({ tx, onClose }: Props) {
             autoFocus={!tx}
             className={`field text-2xl font-semibold ${TYPE_STYLE[type].text}`}
           />
+          {expense && (
+            <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-slate-900"
+                checked={splitOn}
+                onChange={(e) => setSplitOn(e.target.checked)}
+              />
+              Dividi a conta: só uma parte é minha
+            </label>
+          )}
         </div>
 
+        {share !== undefined && (
+          <div>
+            <label className="label" htmlFor="tx-minha-parte">
+              {plan && mode === 'parcela' ? 'Minha parte em cada parcela' : 'Minha parte'}
+            </label>
+            <MoneyInput id="tx-minha-parte" value={myShare} onChange={setMyShare} className="field font-semibold" />
+            <p className="mt-1 text-xs text-slate-500">
+              Conta no orçamento: <strong>{formatBRL(share)}</strong>.{credit && ' Na fatura e no limite do cartão vale o valor cheio.'} O
+              que os outros te pagarem não precisa ser lançado.
+            </p>
+          </div>
+        )}
+
         <div>
-          <label className="label" htmlFor="tx-data">{expense ? 'Data da compra' : 'Data'}</label>
+          <label className="label" htmlFor="tx-data">{estorno ? 'Data do estorno' : expense ? 'Data da compra' : 'Data'}</label>
           <input id="tx-data" type="date" className="field" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
 
@@ -393,7 +450,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           )}
         </div>
 
-        {expense && !tx && !repeating && (
+        {expense && !tx && !repeating && !estorno && (
           <div className="space-y-2">
             <div className="flex items-end gap-3">
               <div className="w-28 shrink-0">
@@ -440,7 +497,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           </div>
         )}
 
-        {!tx && installments === 1 && (
+        {!tx && installments === 1 && !estorno && (
           <div className="space-y-2">
             <div>
               <label className="label" htmlFor="tx-repetir">Repetir</label>

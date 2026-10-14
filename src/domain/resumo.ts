@@ -15,12 +15,29 @@ export interface MonthSummary {
  */
 export const invested = (t: Pick<Transaction, 'amount' | 'resgate'>) => (t.resgate ? -t.amount : t.amount)
 
-export function summarize(transactions: Pick<Transaction, 'type' | 'amount' | 'resgate'>[]): MonthSummary {
+/**
+ * Quanto uma despesa pesa no orçamento: a minha parte, quando a conta foi dividida; o estorno abate.
+ * Esta é a regra de resultado, orçamento, categorias, relatórios e pendências. A fatura e o limite do
+ * cartão usam o valor cheio (`invoiceValue`).
+ */
+export const spent = (t: Pick<Transaction, 'amount' | 'myShare' | 'estorno'>) =>
+  (t.estorno ? -1 : 1) * (t.myShare ?? t.amount)
+
+/** Valor na fatura do cartão: sempre o cheio, como o banco cobra; o estorno abate. */
+export const invoiceValue = (t: Pick<Transaction, 'amount' | 'estorno'>) => (t.estorno ? -t.amount : t.amount)
+
+export type Counted = Pick<Transaction, 'type' | 'amount' | 'resgate' | 'myShare' | 'estorno'>
+
+/** Quanto um lançamento conta dentro do seu tipo (receita, despesa ou investimento), com sinal. */
+export const counted = (t: Counted) =>
+  t.type === 'receita' ? t.amount : t.type === 'despesa' ? spent(t) : invested(t)
+
+export function summarize(transactions: Counted[]): MonthSummary {
   const s = { receitas: 0, despesas: 0, investimentos: 0, resultado: 0 }
   for (const t of transactions) {
-    if (t.type === 'receita') s.receitas += t.amount
-    else if (t.type === 'despesa') s.despesas += t.amount
-    else s.investimentos += invested(t)
+    if (t.type === 'receita') s.receitas += counted(t)
+    else if (t.type === 'despesa') s.despesas += counted(t)
+    else s.investimentos += counted(t)
   }
   s.resultado = s.receitas - s.despesas - s.investimentos
   return s
@@ -55,18 +72,19 @@ const add = (map: Map<string, number>, key: string, amount: number) => map.set(k
 
 /** Despesas por categoria e subcategoria, com o peso de cada uma e o total já pago. */
 export function expenseBreakdown(
-  expenses: Pick<Transaction, 'categoryId' | 'subcategoryId' | 'amount' | 'paid'>[],
+  expenses: Pick<Transaction, 'categoryId' | 'subcategoryId' | 'amount' | 'paid' | 'myShare' | 'estorno'>[],
 ): ExpenseBreakdown {
   const byCategory = new Map<string, number>()
   const bySub = new Map<string, Map<string, number>>()
   let total = 0
   let paid = 0
   for (const t of expenses) {
-    total += t.amount
-    if (t.paid) paid += t.amount
-    add(byCategory, t.categoryId, t.amount)
+    const value = spent(t)
+    total += value
+    if (t.paid) paid += value
+    add(byCategory, t.categoryId, value)
     if (!bySub.has(t.categoryId)) bySub.set(t.categoryId, new Map())
-    add(bySub.get(t.categoryId)!, t.subcategoryId ?? '', t.amount)
+    add(bySub.get(t.categoryId)!, t.subcategoryId ?? '', value)
   }
   const categories = shares(byCategory, total).map((c) => ({ ...c, subs: shares(bySub.get(c.id)!, c.total) }))
   return { total, paid, categories }
@@ -83,7 +101,7 @@ export const CARDS_ROW = 'cartoes'
  * cada cartão dentro do grupo; as demais formas vêm uma por linha. Do maior para o menor.
  */
 export function methodBreakdown(
-  expenses: Pick<Transaction, 'paymentMethodId' | 'amount'>[],
+  expenses: Pick<Transaction, 'paymentMethodId' | 'amount' | 'myShare' | 'estorno'>[],
   creditIds: Set<string>,
 ): MethodRow[] {
   const others = new Map<string, number>()
@@ -91,11 +109,12 @@ export function methodBreakdown(
   let total = 0
   let cardTotal = 0
   for (const t of expenses) {
-    total += t.amount
+    const value = spent(t)
+    total += value
     if (creditIds.has(t.paymentMethodId)) {
-      cardTotal += t.amount
-      add(cards, t.paymentMethodId, t.amount)
-    } else add(others, t.paymentMethodId, t.amount)
+      cardTotal += value
+      add(cards, t.paymentMethodId, value)
+    } else add(others, t.paymentMethodId, value)
   }
   const rows: MethodRow[] = shares(others, total).map((s) => ({ ...s, kind: 'forma' }))
   if (cards.size > 0) {
@@ -104,11 +123,11 @@ export function methodBreakdown(
   return rows.sort((a, b) => b.total - a.total)
 }
 
-/** Total por categoria (nível principal), do maior para o menor. */
+/** Gasto por categoria de despesa (nível principal), do maior para o menor. */
 export function totalsByCategory(
-  transactions: Pick<Transaction, 'categoryId' | 'amount'>[],
+  expenses: Pick<Transaction, 'categoryId' | 'amount' | 'myShare' | 'estorno'>[],
 ): { categoryId: string; total: number }[] {
   const map = new Map<string, number>()
-  for (const t of transactions) map.set(t.categoryId, (map.get(t.categoryId) ?? 0) + t.amount)
+  for (const t of expenses) map.set(t.categoryId, (map.get(t.categoryId) ?? 0) + spent(t))
   return [...map].map(([categoryId, total]) => ({ categoryId, total })).sort((a, b) => b.total - a.total)
 }

@@ -1,4 +1,5 @@
 import type { Transaction } from '../db/types'
+import { invoiceValue } from './resumo'
 
 export interface Invoice {
   /** Mês em que a fatura vence, 'AAAA-MM'. */
@@ -10,11 +11,11 @@ export interface Invoice {
 }
 
 /** Agrupa os lançamentos de um cartão em faturas, da mais antiga para a mais nova. */
-export function invoicesByMonth(transactions: Pick<Transaction, 'month' | 'amount' | 'paid'>[]): Invoice[] {
+export function invoicesByMonth(transactions: Pick<Transaction, 'month' | 'amount' | 'paid' | 'estorno'>[]): Invoice[] {
   const map = new Map<string, Invoice>()
   for (const t of transactions) {
     const invoice = map.get(t.month) ?? { month: t.month, total: 0, count: 0, paid: true }
-    invoice.total += t.amount
+    invoice.total += invoiceValue(t)
     invoice.count++
     invoice.paid = invoice.paid && t.paid
     map.set(t.month, invoice)
