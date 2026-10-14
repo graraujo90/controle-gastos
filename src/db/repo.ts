@@ -4,7 +4,7 @@ import { BACKUP_TABLES, buildBackup, type Backup, type BackupTable } from '../do
 import { dueDateFor, isCredit } from '../domain/fatura'
 import type { Installment } from '../domain/parcelas'
 import { missingOccurrences, occurrenceDate } from '../domain/recorrencia'
-import { monthOf, todayISO } from '../lib/format'
+import { addMonthsToDate, monthOf, todayISO } from '../lib/format'
 import { db } from './db'
 import type { Category, PaymentMethod, Recurrence, Transaction } from './types'
 
@@ -353,6 +353,53 @@ export const setInvoicePaid = (paymentMethodId: string, month: string, paid: boo
     .modify({ paid, updatedAt: now() })
 
 export const deleteTransaction = (id: string) => remove('transactions', [id])
+
+/** Alcance de uma alteração numa compra parcelada, a partir da parcela aberta. */
+export type InstallmentScope = 'proximas' | 'todas'
+
+const inScope = (tx: Transaction, scope: InstallmentScope) => (t: Transaction) =>
+  scope === 'todas' || (t.installmentNumber ?? 0) >= (tx.installmentNumber ?? 0)
+
+/**
+ * Aplica categoria, subcategoria, forma e descrição às outras parcelas da mesma compra. O valor de cada
+ * parcela não muda, para não desfazer a divisão do total. Trocar de ou para cartão de crédito recalcula
+ * a fatura de cada parcela.
+ */
+export async function updateInstallmentGroup(
+  tx: Transaction,
+  changes: Pick<Transaction, 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description'>,
+  scope: InstallmentScope,
+): Promise<void> {
+  if (!tx.installmentGroupId) return
+  const method = await db.paymentMethods.get(changes.paymentMethodId)
+  const wasCredit = isCredit(await db.paymentMethods.get(tx.paymentMethodId))
+  const stamp = now()
+  await db.transactions
+    .where('installmentGroupId')
+    .equals(tx.installmentGroupId)
+    // A parcela aberta já foi gravada pelo formulário, com o vencimento que a pessoa escolheu.
+    .filter((t) => t.id !== tx.id && inScope(tx, scope)(t))
+    .modify((t) => {
+      const methodChanged = t.paymentMethodId !== changes.paymentMethodId
+      Object.assign(t, changes, { updatedAt: stamp })
+      if (!methodChanged) return
+      const offset = (t.installmentNumber ?? 1) - 1
+      if (isCredit(method)) t.dueDate = addMonthsToDate(dueDateFor(t.date, method), offset)
+      else if (wasCredit) t.dueDate = addMonthsToDate(t.date, offset)
+      t.month = monthOf(t.dueDate)
+    })
+}
+
+/** Exclui a parcela aberta e as seguintes, ou todas as parcelas da compra. */
+export async function deleteInstallments(tx: Transaction, scope: InstallmentScope): Promise<void> {
+  if (!tx.installmentGroupId) return
+  const ids = await db.transactions
+    .where('installmentGroupId')
+    .equals(tx.installmentGroupId)
+    .filter(inScope(tx, scope))
+    .primaryKeys()
+  await remove('transactions', ids)
+}
 
 export const deleteInstallmentGroup = async (groupId: string) =>
   remove('transactions', await db.transactions.where('installmentGroupId').equals(groupId).primaryKeys())

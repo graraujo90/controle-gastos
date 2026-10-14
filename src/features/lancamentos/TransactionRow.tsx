@@ -26,7 +26,7 @@ export function TransactionRow({ tx, categories, methods, view, purchase }: Prop
   const style = TYPE_STYLE[tx.type]
   const grouped = !!purchase && purchase.count > 1
   const name = tx.description || sub?.name || category?.name || '—'
-  const title = tx.installmentTotal && !grouped ? `${name} (${tx.installmentNumber}/${tx.installmentTotal})` : name
+  const installment = tx.installmentTotal && !grouped ? `${tx.installmentNumber}/${tx.installmentTotal}` : undefined
 
   const words = confirmWords(tx)
   const overdue = !tx.paid && tx.dueDate < todayISO()
@@ -63,7 +63,16 @@ export function TransactionRow({ tx, categories, methods, view, purchase }: Prop
         <CategoryIcon category={sub ?? category} parent={sub ? category : undefined} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5 font-medium">
-            <span className="truncate">{title}</span>
+            <span className="truncate">{name}</span>
+            {installment && (
+              // Fora do nome, para não sumir quando ele é cortado.
+              <span
+                className="shrink-0 rounded bg-slate-100 px-1.5 text-[11px] font-semibold tabular-nums text-slate-600"
+                aria-label={`Parcela ${installment.replace('/', ' de ')}`}
+              >
+                {installment}
+              </span>
+            )}
             {tx.recurrenceId && <Repeat size={12} className="shrink-0 text-slate-400" aria-label="Recorrente" />}
           </span>
           <span className="block truncate text-xs text-slate-500">
