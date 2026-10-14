@@ -41,6 +41,11 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
   Qualquer número do Início ou dos relatórios que leve à lista deve usar `lancamentosLink()`, nunca estado interno.
   "Em atraso" ignora o período e mostra tudo que está vencido e não confirmado.
 - Parcelas: uma compra em N vezes vira N lançamentos ligados por `installmentGroupId`; centavos que sobram vão na 1ª.
+- Recorrência (`domain/recorrencia.ts`, tabela `recurrences`): semanal, quinzenal ou mensal, com N vezes ou sem fim.
+  Os lançamentos são criados de verdade, com id previsível `regra:número` (dois aparelhos não duplicam) e carimbo de
+  data da regra. Sem fim mantém 12 meses à frente (`extendRecurrences`, ao abrir e após sincronizar). O contador
+  `generated` só cresce: ocorrência apagada não volta. "Este e os próximos" altera os seguintes ainda não confirmados.
+- Arquivos de backup e sincronização estão no formato 2 (`FILE_FORMAT`); versão antiga do app recusa e pede atualização.
 - Confirmação (`paid`) vale para os três tipos: despesa paga, receita recebida, investimento aplicado ou resgatado.
   **Pendentes contam no resultado do mês como previsto**; o Início mostra à parte o realizado e as pendências.
   No crédito, pagar marca a fatura inteira do cartão naquele mês.
