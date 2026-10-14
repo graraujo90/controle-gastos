@@ -192,7 +192,12 @@ export function TransactionForm({ tx, onClose }: Props) {
     if (tx?.installmentGroupId && scope !== 'este') {
       await updateInstallmentGroup(
         tx,
-        { categoryId, subcategoryId: base.subcategoryId, paymentMethodId: methodId, description: base.description },
+        {
+          categoryId, subcategoryId: base.subcategoryId, paymentMethodId: methodId, description: base.description,
+          // Valor e minha parte só vão para as outras parcelas quando foram mudados aqui.
+          ...(amount !== tx.amount && { amount }),
+          ...(share !== tx.myShare && { myShare: share }),
+        },
         scope === 'todas' ? 'todas' : 'proximas',
       )
     }
@@ -337,7 +342,9 @@ export function TransactionForm({ tx, onClose }: Props) {
             {scope !== 'este' && (
               <p className="text-xs text-slate-500">
                 {tx.installmentGroupId
-                  ? 'Categoria, subcategoria, forma e descrição passam para as outras parcelas. O valor muda só nesta.'
+                  ? amount !== tx.amount
+                    ? `Categoria, subcategoria, forma, descrição e o valor de ${formatBRL(amount)} por parcela passam para as outras parcelas. O total da compra muda.`
+                    : 'Categoria, subcategoria, forma e descrição passam para as outras parcelas. Se mudar o valor, ele vale para cada parcela.'
                   : 'Valor, categoria, forma e descrição passam a valer também para os próximos ainda não confirmados. As datas deles não mudam.'}
               </p>
             )}

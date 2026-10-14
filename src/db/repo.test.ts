@@ -84,6 +84,30 @@ describe('alcance em compra parcelada', () => {
     expect(back.every((t) => t.invoiceShift === undefined)).toBe(true)
   })
 
+  it('valor mudado vale para cada parcela do alcance; o total da compra muda junto', async () => {
+    const [, , third] = await buyInFour()
+    await updateInstallmentGroup(third, changesFrom(third, { amount: 11000 }), 'proximas')
+    // A 3ª é gravada pelo formulário; a função leva o valor só para a 4ª.
+    expect((await byNumber()).map((t) => t.amount)).toEqual([10000, 10000, 10000, 11000])
+
+    await updateInstallmentGroup(third, changesFrom(third, { amount: 12000, myShare: 6000 }), 'todas')
+    const txs = (await byNumber()).filter((t) => t.id !== third.id)
+    expect(txs.map((t) => t.amount)).toEqual([12000, 12000, 12000])
+    expect(txs.map((t) => t.myShare)).toEqual([6000, 6000, 6000])
+  })
+
+  it('sem mudar o valor, cada parcela mantém o seu (inclusive os centavos da 1ª)', async () => {
+    const category = (await db.categories.toArray()).find((c) => c.type === 'despesa' && !c.parentId)!
+    const method = (await db.paymentMethods.toArray()).find((m) => m.kind !== 'credito')!
+    await saveInstallments(
+      { type: 'despesa', date: '2026-10-05', categoryId: category.id, subcategoryId: null, paymentMethodId: method.id, description: 'tv', paid: false, resgate: false },
+      [10001, 10000].map((amount, i) => ({ number: i + 1, amount, dueDate: `2026-1${i}-05` })),
+    )
+    const [, second] = await byNumber()
+    await updateInstallmentGroup(second, changesFrom(second, { description: 'televisão' }), 'todas')
+    expect((await byNumber()).map((t) => [t.amount, t.description])).toEqual([[10001, 'televisão'], [10000, 'tv']])
+  })
+
   it('excluir "esta e as próximas" mantém as anteriores e deixa registro para a sincronização', async () => {
     const [, , third] = await buyInFour()
     await deleteInstallments(third, 'proximas')

@@ -427,13 +427,15 @@ const inScope = (tx: Transaction, scope: InstallmentScope) => (t: Transaction) =
   scope === 'todas' || (t.installmentNumber ?? 0) >= (tx.installmentNumber ?? 0)
 
 /**
- * Aplica categoria, subcategoria, forma e descrição às outras parcelas da mesma compra. O valor de cada
- * parcela não muda, para não desfazer a divisão do total. Trocar de ou para cartão de crédito recalcula
- * a fatura de cada parcela.
+ * Aplica categoria, subcategoria, forma e descrição às outras parcelas da mesma compra. Valor e minha parte
+ * só vêm em `changes` quando a pessoa os mudou, e então valem por parcela (o total da compra muda junto);
+ * sem mudança, cada parcela mantém o seu, inclusive os centavos da 1ª. Trocar de ou para cartão de
+ * crédito recalcula a fatura de cada parcela.
  */
 export async function updateInstallmentGroup(
   tx: Transaction,
-  changes: Pick<Transaction, 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description'>,
+  changes: Pick<Transaction, 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description'> &
+    Partial<Pick<Transaction, 'amount' | 'myShare'>>,
   scope: InstallmentScope,
 ): Promise<void> {
   if (!tx.installmentGroupId) return

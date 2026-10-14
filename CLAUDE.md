@@ -42,7 +42,8 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
   "Em atraso" ignora o período e mostra tudo que está vencido e não confirmado.
 - Parcelas: uma compra em N vezes vira N lançamentos ligados por `installmentGroupId`; centavos que sobram vão na 1ª.
   Editar ou excluir uma parcela pergunta o alcance: **só esta** (padrão), esta e as próximas, ou todas. Na edição,
-  categoria, subcategoria, forma e descrição vão para o alcance; o valor muda só na parcela aberta.
+  categoria, subcategoria, forma e descrição vão para o alcance. Valor e minha parte só vão quando foram mudados, e
+  valem **por parcela** (o total da compra muda); sem mudança, cada parcela mantém o seu (centavos da 1ª).
 - Mover de fatura (`invoiceShift`, só no crédito, até uma fatura para cada lado): para quando o banco fecha em dia
   diferente do cadastrado. Fica guardado no lançamento e se mantém ao mudar a data; numa compra parcelada, todas as
   parcelas andam juntas. Recorrência não se move.
