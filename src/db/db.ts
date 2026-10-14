@@ -83,6 +83,12 @@ db.version(6).stores({
   transactions: 'id, month, date, dueDate, categoryId, subcategoryId, paymentMethodId, installmentGroupId, recurrenceId',
 })
 
+// v7: compra dividida em categorias (partes ligadas por splitGroupId).
+db.version(7).stores({
+  transactions:
+    'id, month, date, dueDate, categoryId, subcategoryId, paymentMethodId, installmentGroupId, recurrenceId, splitGroupId',
+})
+
 // Roda uma única vez, quando o banco é criado no aparelho.
 db.on('populate', (tx) => {
   tx.table('categories').bulkAdd(seedCategories())

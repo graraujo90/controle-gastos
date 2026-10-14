@@ -2,6 +2,7 @@
 // Trocar o armazenamento local por nuvem no futuro significa reescrever só este arquivo.
 import { BACKUP_TABLES, buildBackup, type Backup, type BackupTable } from '../domain/backup'
 import { dueDateFor, isCredit } from '../domain/fatura'
+import type { SplitPart } from '../domain/divisao'
 import type { Installment } from '../domain/parcelas'
 import { missingOccurrences, occurrenceDate } from '../domain/recorrencia'
 import { addMonthsToDate, monthOf, todayISO } from '../lib/format'
@@ -345,6 +346,9 @@ export async function setPaid(tx: Transaction, paid: boolean): Promise<void> {
       .equals(tx.month)
       .filter((t) => t.paymentMethodId === tx.paymentMethodId && t.type === 'despesa')
       .modify(changes)
+  } else if (tx.splitGroupId) {
+    // As partes de uma compra dividida foram pagas juntas.
+    await db.transactions.where('splitGroupId').equals(tx.splitGroupId).modify(changes)
   } else {
     await db.transactions.update(tx.id, changes)
   }
@@ -371,9 +375,12 @@ export async function setPaidMany(txs: Transaction[], paid: boolean): Promise<vo
   const invoices = new Map(txs.filter(onInvoice).map((t) => [`${t.paymentMethodId}|${t.month}`, t]))
   const stamp = now()
   await db.transaction('rw', db.transactions, async () => {
-    await db.transactions.bulkUpdate(
-      txs.filter((t) => !onInvoice(t)).map((t) => ({ key: t.id, changes: { paid, updatedAt: stamp } })),
-    )
+    const plain = txs.filter((t) => !onInvoice(t))
+    // As outras partes de uma compra dividida acompanham a parte escolhida.
+    const groups = [...new Set(plain.map((t) => t.splitGroupId).filter((id): id is string => !!id))]
+    const siblings = groups.length ? await db.transactions.where('splitGroupId').anyOf(groups).primaryKeys() : []
+    const ids = [...new Set([...plain.map((t) => t.id), ...siblings])]
+    await db.transactions.bulkUpdate(ids.map((key) => ({ key, changes: { paid, updatedAt: stamp } })))
     for (const t of invoices.values()) await setInvoicePaid(t.paymentMethodId, t.month, paid)
   })
 }
@@ -381,6 +388,37 @@ export async function setPaidMany(txs: Transaction[], paid: boolean): Promise<vo
 /** Troca categoria e subcategoria de vários lançamentos (do mesmo tipo). */
 export const setCategoryMany = (ids: string[], categoryId: string, subcategoryId: string | null) =>
   db.transactions.bulkUpdate(ids.map((key) => ({ key, changes: { categoryId, subcategoryId, updatedAt: now() } })))
+
+// ---------- compra dividida em categorias ----------
+
+/**
+ * Grava a compra dividida: uma despesa por parte, com os mesmos dados da compra. Ao editar, as partes
+ * que já existem são atualizadas e as retiradas da divisão são excluídas.
+ */
+export async function saveSplit(
+  input: Omit<TransactionInput, 'id' | 'amount' | 'categoryId' | 'subcategoryId'>,
+  parts: SplitPart[],
+  splitGroupId: string = crypto.randomUUID(),
+): Promise<void> {
+  const stamp = now()
+  const month = monthOf(input.dueDate)
+  const keep = new Set(parts.map((p) => p.id))
+  const stale = (await db.transactions.where('splitGroupId').equals(splitGroupId).primaryKeys()).filter((id) => !keep.has(id))
+  await db.transaction('rw', db.transactions, db.deletions, async () => {
+    await remove('transactions', stale)
+    for (const p of parts) {
+      const values = {
+        ...input, amount: p.amount, categoryId: p.categoryId, subcategoryId: p.subcategoryId, month, splitGroupId,
+        updatedAt: stamp,
+      }
+      if (p.id) await db.transactions.update(p.id, values)
+      else await db.transactions.add({ ...values, id: crypto.randomUUID(), createdAt: stamp })
+    }
+  })
+}
+
+export const deleteSplit = async (splitGroupId: string) =>
+  remove('transactions', await db.transactions.where('splitGroupId').equals(splitGroupId).primaryKeys())
 
 /** Alcance de uma alteração numa compra parcelada, a partir da parcela aberta. */
 export type InstallmentScope = 'proximas' | 'todas'

@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Check, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { Check, ChevronLeft, ChevronRight, Plus, Split, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useApp } from '../../app/AppContext'
 import { ConfirmDialog, type ConfirmOption } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Modal'
@@ -8,10 +8,11 @@ import { MoneyInput } from '../../components/MoneyInput'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
 import {
-  deleteInstallments, deleteTransaction, endRecurrence, saveCategory, saveInstallments, saveRecurring, saveTransaction,
-  shiftInstallments, updateFollowing, updateInstallmentGroup,
+  deleteInstallments, deleteSplit, deleteTransaction, endRecurrence, saveCategory, saveInstallments, saveRecurring,
+  saveSplit, saveTransaction, shiftInstallments, updateFollowing, updateInstallmentGroup,
 } from '../../db/repo'
 import { TX_LABEL, TX_TYPES, type PaymentMethod, type Transaction, type TxType } from '../../db/types'
+import { splitError } from '../../domain/divisao'
 import { dueDateFor, isCredit, MAX_INVOICE_SHIFT } from '../../domain/fatura'
 import { planInstallments, type InstallmentMode } from '../../domain/parcelas'
 import {
@@ -19,6 +20,7 @@ import {
 } from '../../domain/recorrencia'
 import { confirmWords } from '../../lib/confirmacao'
 import { addMonthsToDate, formatBRL, monthLabel, monthOf, shortDate, todayISO } from '../../lib/format'
+import { DivisaoEditor, newRow, type SplitRow } from './DivisaoEditor'
 
 interface Props {
   tx?: Transaction
@@ -64,12 +66,29 @@ export function TransactionForm({ tx, onClose }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Criar subcategoria sem sair do lançamento.
   const [newSub, setNewSub] = useState<string | null>(null)
+  // Compra dividida em categorias: null = uma categoria só.
+  const [parts, setParts] = useState<SplitRow[] | null>(null)
   const [error, setError] = useState('')
 
   const { setMonth } = useApp()
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, 'pt-BR')
   const categories = (useLiveQuery(() => db.categories.toArray(), []) ?? []).sort(byName)
   const methods = (useLiveQuery(() => db.paymentMethods.toArray(), []) ?? []).sort(byName)
+
+  // Abrir uma parte de uma compra dividida edita a divisão inteira: carrega as partes uma vez.
+  const savedParts = useLiveQuery<Transaction[] | null>(
+    () => (tx?.splitGroupId ? db.transactions.where('splitGroupId').equals(tx.splitGroupId).toArray() : null),
+    [tx?.splitGroupId],
+  )
+  const partsLoaded = useRef(false)
+  useEffect(() => {
+    if (!savedParts || partsLoaded.current) return
+    partsLoaded.current = true
+    // Maior parte primeiro: as partes nascem juntas, então a data de criação não dá uma ordem estável.
+    const ordered = [...savedParts].sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id))
+    setParts(ordered.map((t) => newRow({ id: t.id, categoryId: t.categoryId, subcategoryId: t.subcategoryId, amount: t.amount })))
+    setAmount(ordered.reduce((sum, t) => sum + t.amount, 0))
+  }, [savedParts])
 
   // Itens arquivados só aparecem se já estiverem selecionados no lançamento em edição.
   const topCategories = categories.filter(
@@ -86,8 +105,9 @@ export function TransactionForm({ tx, onClose }: Props) {
   const expense = type === 'despesa'
   const credit = expense && isCredit(method)
   const estorno = expense && estornoOn
-  const repeating = !tx && !estorno && repeat !== ''
-  const share = expense && splitOn ? myShare : undefined
+  const splitting = parts !== null
+  const repeating = !tx && !estorno && !splitting && repeat !== ''
+  const share = expense && splitOn && !splitting ? myShare : undefined
   // Recorrência não se move de fatura: cada ocorrência segue o fechamento cadastrado.
   const invoiceShift = credit && !repeating ? shift : 0
   // No crédito o vencimento é o da fatura; ao editar a parcela N, o da N-ésima fatura.
@@ -101,7 +121,7 @@ export function TransactionForm({ tx, onClose }: Props) {
   const paid = credit ? (tx?.paid ?? dueDate < todayISO()) : (paidManual ?? dueDate <= todayISO())
   // Repetição e parcelamento não se combinam: escolher um esconde o outro.
   const installments =
-    expense && !tx && !repeating && !estorno ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
+    expense && !tx && !repeating && !estorno && !splitting ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
   const repeatCount = endless ? undefined : Math.max(2, Math.min(MAX_COUNT, Math.floor(Number(times)) || 2))
   // O que a repetição vai criar agora, para mostrar antes de salvar.
   const occurrences =
@@ -109,6 +129,16 @@ export function TransactionForm({ tx, onClose }: Props) {
       ? missingOccurrences({ frequency: repeat, startDate: date, count: repeatCount, generated: 0, ended: false }, todayISO())
       : []
   const plan = installments > 1 && date ? planInstallments(amount, mode, installments, dueDate, share) : null
+  // A divisão vale para compra à vista: não se combina com parcelas, repetição nem estorno.
+  const canSplit =
+    expense && !estorno && !repeating && installments === 1 && !tx?.installmentGroupId && !tx?.recurrenceId && !splitting
+
+  function startSplit() {
+    setParts([
+      newRow({ id: tx?.id, categoryId, subcategoryId: subcategoryId || null }),
+      newRow(),
+    ])
+  }
 
   function changeType(next: TxType) {
     setType(next)
@@ -126,8 +156,22 @@ export function TransactionForm({ tx, onClose }: Props) {
     e.preventDefault()
     if (amount <= 0) return setError('Informe um valor maior que zero.')
     if (!date || !dueDate) return setError('Informe a data e o vencimento.')
-    if (!categoryId) return setError('Escolha uma categoria.')
+    if (!parts && !categoryId) return setError('Escolha uma categoria.')
     if (!methodId) return setError(`Escolha a forma de ${inflow ? 'recebimento' : 'pagamento'}.`)
+    if (parts) {
+      const problem = splitError(amount, parts)
+      if (problem) return setError(problem)
+      await saveSplit(
+        {
+          type, date, dueDate, paymentMethodId: methodId, description: description.trim(), paid, resgate: false,
+          invoiceShift: invoiceShift || undefined,
+        },
+        parts,
+        tx?.splitGroupId,
+      )
+      setMonth(monthOf(dueDate))
+      return onClose()
+    }
     if (share !== undefined && share >= amount) return setError('A sua parte precisa ser menor que o valor da conta.')
     const base = {
       type,
@@ -169,7 +213,8 @@ export function TransactionForm({ tx, onClose }: Props) {
 
   async function remove(choice: Scope | undefined) {
     if (!tx) return
-    if (tx.recurrenceId && choice === 'proximos') await endRecurrence(tx.recurrenceId, tx.recurrenceNumber)
+    if (tx.splitGroupId) await deleteSplit(tx.splitGroupId)
+    else if (tx.recurrenceId && choice === 'proximos') await endRecurrence(tx.recurrenceId, tx.recurrenceNumber)
     else if (tx.installmentGroupId && choice && choice !== 'este') {
       await deleteInstallments(tx, choice === 'todas' ? 'todas' : 'proximas')
     } else await deleteTransaction(tx.id)
@@ -217,7 +262,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           ))}
         </div>
 
-        {expense && (
+        {expense && !splitting && (
           <div>
             <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
               {([false, true] as const).map((value) => (
@@ -310,7 +355,7 @@ export function TransactionForm({ tx, onClose }: Props) {
             autoFocus={!tx}
             className={`field text-2xl font-semibold ${TYPE_STYLE[type].text}`}
           />
-          {expense && (
+          {expense && !splitting && (
             <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -341,7 +386,17 @@ export function TransactionForm({ tx, onClose }: Props) {
           <input id="tx-data" type="date" className="field" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
 
-        <div>
+        {splitting && parts && (
+          <DivisaoEditor
+            total={amount}
+            rows={parts}
+            categories={categories.filter((c) => c.type === 'despesa')}
+            onChange={setParts}
+            onCancel={tx?.splitGroupId ? undefined : () => setParts(null)}
+          />
+        )}
+
+        <div className={splitting ? 'hidden' : undefined}>
           <label className="label" htmlFor="tx-categoria">Categoria</label>
           <select
             id="tx-categoria"
@@ -357,9 +412,18 @@ export function TransactionForm({ tx, onClose }: Props) {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
+          {canSplit && (
+            <button
+              type="button"
+              className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500 hover:underline"
+              onClick={startSplit}
+            >
+              <Split size={12} /> Dividir em categorias
+            </button>
+          )}
         </div>
 
-        {categoryId && type !== 'receita' && (
+        {categoryId && type !== 'receita' && !splitting && (
           <div>
             <label className="label" htmlFor="tx-sub">Subcategoria (opcional)</label>
             {newSub === null ? (
@@ -450,7 +514,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           )}
         </div>
 
-        {expense && !tx && !repeating && !estorno && (
+        {expense && !tx && !repeating && !estorno && !splitting && (
           <div className="space-y-2">
             <div className="flex items-end gap-3">
               <div className="w-28 shrink-0">
@@ -497,7 +561,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           </div>
         )}
 
-        {!tx && installments === 1 && !estorno && (
+        {!tx && installments === 1 && !estorno && !splitting && (
           <div className="space-y-2">
             <div>
               <label className="label" htmlFor="tx-repetir">Repetir</label>
@@ -618,8 +682,14 @@ export function TransactionForm({ tx, onClose }: Props) {
 
       {confirmDelete && tx && (
         <ConfirmDialog<Scope>
-          title={tx.installmentGroupId ? 'Excluir parcela' : 'Excluir lançamento'}
-          message={scopeOptions.length > 0 ? 'O que você quer excluir?' : 'Este lançamento será excluído.'}
+          title={tx.installmentGroupId ? 'Excluir parcela' : tx.splitGroupId ? 'Excluir compra dividida' : 'Excluir lançamento'}
+          message={
+            scopeOptions.length > 0
+              ? 'O que você quer excluir?'
+              : tx.splitGroupId
+                ? `A compra inteira será excluída, com as ${parts?.length ?? 0} partes.`
+                : 'Este lançamento será excluído.'
+          }
           options={scopeOptions.length > 0 ? scopeOptions : undefined}
           defaultValue="este"
           confirmLabel="Excluir"

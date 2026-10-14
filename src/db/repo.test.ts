@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { db } from './db'
 import {
   deleteInstallments, deleteTransactions, resetAll, saveInstallments, saveMethod, saveTransaction, setCategoryMany,
-  setPaidMany, shiftInstallments, updateInstallmentGroup,
+  deleteSplit, saveSplit, setPaid, setPaidMany, shiftInstallments, updateInstallmentGroup,
 } from './repo'
 import type { Transaction } from './types'
 
@@ -144,5 +144,60 @@ describe('vários lançamentos de uma vez', () => {
     expect(cats.livro).toBe(other.id)
     expect(cats.cinema).toBe(other.id)
     expect(cats.padaria).not.toBe(other.id)
+  })
+})
+
+describe('compra dividida em categorias', () => {
+  beforeEach(async () => {
+    await resetAll()
+  })
+
+  async function market() {
+    const [food, cleaning, other] = (await db.categories.toArray()).filter((c) => c.type === 'despesa' && !c.parentId)
+    const cash = (await db.paymentMethods.toArray()).find((m) => m.kind !== 'credito')!
+    const input = {
+      type: 'despesa' as const, date: '2026-10-10', dueDate: '2026-10-10', paymentMethodId: cash.id,
+      description: 'mercado', paid: false, resgate: false,
+    }
+    await saveSplit(input, [
+      { categoryId: food.id, subcategoryId: null, amount: 22000 },
+      { categoryId: cleaning.id, subcategoryId: null, amount: 8000 },
+    ])
+    return { input, food, cleaning, other, parts: await db.transactions.toArray() }
+  }
+
+  it('cria uma despesa por parte, ligadas e com os mesmos dados da compra', async () => {
+    const { parts } = await market()
+    expect(parts).toHaveLength(2)
+    expect(new Set(parts.map((t) => t.splitGroupId)).size).toBe(1)
+    expect(parts.every((t) => t.date === '2026-10-10' && t.description === 'mercado' && t.month === '2026-10')).toBe(true)
+    expect(parts.reduce((sum, t) => sum + t.amount, 0)).toBe(30000)
+  })
+
+  it('editar mantém as partes que ficam e exclui as retiradas', async () => {
+    const { input, food, other, parts } = await market()
+    const kept = parts.find((t) => t.categoryId === food.id)!
+    await saveSplit(input, [
+      { id: kept.id, categoryId: food.id, subcategoryId: null, amount: 20000 },
+      { categoryId: other.id, subcategoryId: null, amount: 10000 },
+    ], kept.splitGroupId)
+    const after = await db.transactions.toArray()
+    expect(after.map((t) => t.amount).sort()).toEqual([10000, 20000])
+    expect(after.some((t) => t.id === kept.id)).toBe(true)
+    expect(await db.deletions.count()).toBe(1)
+  })
+
+  it('confirmar uma parte confirma a compra inteira', async () => {
+    const { parts } = await market()
+    await setPaid(parts[0], true)
+    expect((await db.transactions.toArray()).every((t) => t.paid)).toBe(true)
+    await setPaidMany([parts[1]], false)
+    expect((await db.transactions.toArray()).every((t) => !t.paid)).toBe(true)
+  })
+
+  it('excluir a divisão apaga todas as partes', async () => {
+    const { parts } = await market()
+    await deleteSplit(parts[0].splitGroupId!)
+    expect(await db.transactions.count()).toBe(0)
   })
 })

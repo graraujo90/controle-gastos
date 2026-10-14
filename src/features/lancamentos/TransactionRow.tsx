@@ -1,4 +1,4 @@
-import { Check, CircleAlert, CircleCheck, Circle, Repeat } from 'lucide-react'
+import { Check, CircleAlert, CircleCheck, Circle, Repeat, Split } from 'lucide-react'
 import { useRef } from 'react'
 import { useApp } from '../../app/AppContext'
 import { CategoryIcon } from '../../components/CategoryIcon'
@@ -108,6 +108,7 @@ export function TransactionRow({ tx, categories, methods, view, purchase, select
               </span>
             )}
             {tx.recurrenceId && <Repeat size={12} className="mt-1 shrink-0 text-slate-400" aria-label="Recorrente" />}
+            {tx.splitGroupId && <Split size={12} className="mt-1 shrink-0 text-slate-400" aria-label="Compra dividida" />}
           </span>
           {/* O nome usa a largura toda; o valor fica na linha de baixo, à direita, sempre inteiro. */}
           <span className="mt-0.5 flex items-baseline gap-2">

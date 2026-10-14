@@ -93,6 +93,8 @@ export interface Transaction extends Base {
   myShare?: number
   /** Só em despesas: dinheiro devolvido pelo cartão ou pela loja. Abate da fatura e do gasto do mês. */
   estorno?: boolean
+  /** Compra dividida em categorias: as partes têm o mesmo grupo, data, forma e situação de pagamento. */
+  splitGroupId?: string
 }
 
 /**
