@@ -3,6 +3,30 @@
 App pessoal de controle de gastos e orçamento familiar (PWA, pt-BR). O dono do projeto não é programador:
 explique decisões em linguagem simples e valide regras de negócio com ele antes de mudar.
 
+## Como trabalhamos (combinados com o dono)
+
+Valem em qualquer computador: este arquivo é a memória do projeto. Quando o dono disser "quero continuar o
+desenvolvimento do app de gastos", leia este arquivo, faça `git pull` e pergunte o que ele quer ajustar.
+
+- **Estado atual**: versão 1.2.3 publicada em https://graraujo90.github.io/controle-gastos/ (etiqueta `v1.2.3`). O
+  dono usa o app publicado; os dados reais dele ficam no celular e no OneDrive, nunca no navegador local. Itens em
+  aberto em "Pendências e ideias", no fim deste arquivo. Atualize esta linha a cada versão publicada.
+- **Commit e push quando o dono aprova a entrega** (o pedido ou o plano aprovado já diz para publicar); na dúvida,
+  pergunte. Autor dos commits: `graraujo90 <graraujo90@users.noreply.github.com>` (nunca o e-mail pessoal: o
+  repositório é público), mensagem em português, terminando com a linha `Co-Authored-By` do Claude. Cada push na
+  `main` publica o site sozinho (GitHub Actions); confira que a publicação terminou com sucesso.
+- **A cada entrega**: sobe a versão em `package.json` e `package-lock.json` (os dois primeiros `"version"`), registra
+  as regras novas neste arquivo, roda `npm test` e `npm run build`, confere no navegador (celular 360/375 px e
+  computador, claro e escuro), cria a etiqueta `vX.Y.Z` e envia junto.
+- **Teste no navegador só com dados próprios de teste**: lançamentos, formas e categorias com nome começando por
+  "TESTE"; apague tudo no fim pelas funções de `repo.ts` (para ficar o registro de exclusão). O banco do navegador
+  local é só de desenvolvimento; nunca mexa nos dados do dono.
+- Antes de mudar uma regra de negócio, proponha e espere o ok; pergunte com opções claras e uma recomendada.
+- **Dois computadores**: o projeto fica no OneDrive e no GitHub. Não trabalhe nos dois ao mesmo tempo; espere o
+  OneDrive terminar de sincronizar antes de abrir no outro; comece com `git pull` e termine com commit e push. Se
+  faltar `node_modules`, rode `npm install`. A memória automática do Claude fica em cada computador; o que precisa
+  valer nos dois tem que estar aqui.
+
 ## Comandos
 
 - `npm run dev` — servidor local em http://localhost:5173
@@ -103,3 +127,22 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
 
 - O projeto fica dentro do OneDrive, e o servidor de desenvolvimento às vezes **não percebe arquivos alterados**:
   a tela continua com código antigo e erros que já foram corrigidos. Na dúvida, reinicie o `npm run dev`.
+- No Windows, comandos longos com crases ou aspas no Git Bash quebram ("unexpected EOF"): escreva o script num arquivo
+  `.cjs` na pasta temporária e rode com `node`. Não há Python instalado.
+- O login da Microsoft não dá para testar no navegador local; mudanças em `src/sync/` são conferidas por testes
+  (`engine.test.ts` simula dois aparelhos) e depois no aparelho do dono.
+
+## Pendências e ideias
+
+Atualize ao entregar: tire o que foi feito, acrescente o que o dono pedir para depois.
+
+- **Conferir no celular do dono** a renovação do login (1.2.2): depois de mais de 24 h sem abrir, o app deve voltar
+  sincronizado sem senha. Se a Microsoft pedir senha toda vez, conversar sobre alternativas.
+- **Teste com a conta da esposa** como convidada (ver Sincronização).
+- **Perguntas ao dono ainda sem resposta**: (1) em "A pagar no mês", a conta dividida conta só a minha parte (como
+  hoje) ou o valor cheio que o banco cobra? (2) o resgate de investimento também em verde, como o estorno?
+- **Ideia oferecida**: dividir em categorias junto com parcelamento (cada parcela dividida entre as categorias;
+  centavos na 1ª; o alcance "só esta / próximas / todas" vale para a divisão inteira da parcela). Hoje o caminho é
+  lançar uma compra parcelada por categoria.
+- Desfazer uma divisão já salva: hoje só excluindo e lançando de novo.
+- Lançamentos a partir de notificações do celular: em espera.
