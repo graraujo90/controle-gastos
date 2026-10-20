@@ -8,7 +8,7 @@ explique decisões em linguagem simples e valide regras de negócio com ele ante
 Valem em qualquer computador: este arquivo é a memória do projeto. Quando o dono disser "quero continuar o
 desenvolvimento do app de gastos", leia este arquivo, faça `git pull` e pergunte o que ele quer ajustar.
 
-- **Estado atual**: versão 1.2.3 publicada em https://graraujo90.github.io/controle-gastos/ (etiqueta `v1.2.3`). O
+- **Estado atual**: versão 1.2.4 publicada em https://graraujo90.github.io/controle-gastos/ (etiqueta `v1.2.4`). O
   dono usa o app publicado; os dados reais dele ficam no celular e no OneDrive, nunca no navegador local. Itens em
   aberto em "Pendências e ideias", no fim deste arquivo. Atualize esta linha a cada versão publicada.
 - **Commit e push quando o dono aprova a entrega** (o pedido ou o plano aprovado já diz para publicar); na dúvida,
@@ -71,7 +71,9 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
   valem **por parcela** (o total da compra muda); sem mudança, cada parcela mantém o seu (centavos da 1ª).
 - Mover de fatura (`invoiceShift`, só no crédito, até uma fatura para cada lado): para quando o banco fecha em dia
   diferente do cadastrado. Fica guardado no lançamento e se mantém ao mudar a data; numa compra parcelada, todas as
-  parcelas andam juntas. Recorrência não se move.
+  parcelas andam juntas. Na recorrência o ajuste fica na regra (`Recurrence.invoiceShift`) e vale para todas as
+  ocorrências, inclusive as criadas depois; "só este" move uma ocorrência, "este e os próximos" move as seguintes
+  ainda não confirmadas e a regra.
 - **Minha parte** (`myShare`, conta dividida) e **estorno** (`estorno: true`), só em despesas. Uma regra única em
   `domain/resumo.ts`: `spent()` (minha parte; estorno negativo) vale para resultado, orçamento, categorias,
   relatórios e pendências; `invoiceValue()` (valor cheio; estorno negativo) vale para fatura e limite do cartão.

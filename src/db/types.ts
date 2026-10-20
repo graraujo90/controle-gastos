@@ -123,6 +123,8 @@ export interface Recurrence extends Base {
   resgate?: boolean
   /** Conta dividida: a minha parte em cada ocorrência. */
   myShare?: number
+  /** Cartão de crédito: todas as ocorrências movidas para a fatura anterior (−1) ou seguinte (+1). */
+  invoiceShift?: number
 }
 
 export interface Budget extends Base {

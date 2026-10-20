@@ -108,8 +108,8 @@ export function TransactionForm({ tx, onClose }: Props) {
   const splitting = parts !== null
   const repeating = !tx && !estorno && !splitting && repeat !== ''
   const share = expense && splitOn && !splitting ? myShare : undefined
-  // Recorrência não se move de fatura: cada ocorrência segue o fechamento cadastrado.
-  const invoiceShift = credit && !repeating ? shift : 0
+  // Na recorrência o ajuste vai para a regra: todas as ocorrências caem na fatura movida.
+  const invoiceShift = credit ? shift : 0
   // No crédito o vencimento é o da fatura; ao editar a parcela N, o da N-ésima fatura.
   const dueDate = !expense
     ? date
@@ -208,7 +208,7 @@ export function TransactionForm({ tx, onClose }: Props) {
     if (tx?.recurrenceId && scope === 'proximos') {
       await updateFollowing(tx, {
         type, amount, categoryId, subcategoryId: base.subcategoryId, paymentMethodId: methodId,
-        description: base.description, resgate, myShare: share,
+        description: base.description, resgate, myShare: share, invoiceShift: invoiceShift || undefined,
       })
     }
     // Leva a tela para o mês em que o lançamento entrou (o do vencimento).
@@ -485,38 +485,34 @@ export function TransactionForm({ tx, onClose }: Props) {
           </select>
           {credit && date && (
             <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-              {!repeating && (
-                <button
-                  type="button"
-                  className="rounded-md p-1.5 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-30"
-                  onClick={() => setShift(shift - 1)}
-                  disabled={shift <= -MAX_INVOICE_SHIFT}
-                  aria-label="Mover para a fatura anterior"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-              )}
+              <button
+                type="button"
+                className="rounded-md p-1.5 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-30"
+                onClick={() => setShift(shift - 1)}
+                disabled={shift <= -MAX_INVOICE_SHIFT}
+                aria-label="Mover para a fatura anterior"
+              >
+                <ChevronLeft size={14} />
+              </button>
               <p className="flex-1 text-center">
                 Entra na fatura de <span className="font-semibold text-slate-700">{monthLabel(monthOf(dueDate)).toLowerCase()}</span>,
                 com vencimento em {shortDate(dueDate)}.
                 {invoiceShift !== 0 && (
                   <span className="block text-amber-600">
                     Movida para a fatura {invoiceShift < 0 ? 'anterior' : 'seguinte'}
-                    {tx?.installmentGroupId ? ', com todas as parcelas' : ''}.
+                    {tx?.installmentGroupId ? ', com todas as parcelas' : repeating ? ', em todas as repetições' : ''}.
                   </span>
                 )}
               </p>
-              {!repeating && (
-                <button
-                  type="button"
-                  className="rounded-md p-1.5 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-30"
-                  onClick={() => setShift(shift + 1)}
-                  disabled={shift >= MAX_INVOICE_SHIFT}
-                  aria-label="Mover para a fatura seguinte"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              )}
+              <button
+                type="button"
+                className="rounded-md p-1.5 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-30"
+                onClick={() => setShift(shift + 1)}
+                disabled={shift >= MAX_INVOICE_SHIFT}
+                aria-label="Mover para a fatura seguinte"
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
           )}
         </div>

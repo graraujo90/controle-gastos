@@ -209,7 +209,7 @@ function buildOccurrences(rule: Recurrence, numbers: number[], method: PaymentMe
     const date = occurrenceDate(rule.startDate, rule.frequency, n)
     // No crédito o vencimento é o da fatura daquela data; fora dele, o vencimento informado anda junto.
     const dueDate = isCredit(method)
-      ? dueDateFor(date, method)
+      ? dueDateFor(date, method, rule.invoiceShift)
       : rule.startDueDate
         ? occurrenceDate(rule.startDueDate, rule.frequency, n)
         : date
@@ -225,6 +225,7 @@ function buildOccurrences(rule: Recurrence, numbers: number[], method: PaymentMe
       description: rule.description,
       resgate: rule.resgate,
       ...(rule.myShare !== undefined && { myShare: rule.myShare }),
+      ...(rule.invoiceShift && isCredit(method) && { invoiceShift: rule.invoiceShift }),
       date,
       dueDate,
       month: monthOf(dueDate),
@@ -272,6 +273,7 @@ export async function saveRecurring(
     description: input.description,
     resgate: input.resgate,
     myShare: input.myShare,
+    invoiceShift: input.invoiceShift,
     createdAt: stamp,
     updatedAt: stamp,
   }
@@ -287,12 +289,13 @@ export async function extendRecurrences(): Promise<void> {
 
 type RecurringChanges = Pick<
   Transaction,
-  'type' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'resgate' | 'myShare'
+  | 'type' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'resgate' | 'myShare'
+  | 'invoiceShift'
 >
 
 /**
- * "Este e os próximos": aplica valor, categoria, forma e descrição às ocorrências seguintes ainda não
- * confirmadas e ao modelo da regra (o que for criado depois já nasce assim). As datas não mudam.
+ * "Este e os próximos": aplica valor, categoria, forma, descrição e o ajuste de fatura às ocorrências seguintes
+ * ainda não confirmadas e ao modelo da regra (o que for criado depois já nasce assim). As datas de compra não mudam.
  */
 export async function updateFollowing(tx: Transaction, changes: RecurringChanges): Promise<void> {
   if (!tx.recurrenceId) return
@@ -307,7 +310,7 @@ export async function updateFollowing(tx: Transaction, changes: RecurringChanges
       .filter((t) => (t.recurrenceNumber ?? 0) > (tx.recurrenceNumber ?? 0) && !t.paid)
       .modify((t) => {
         Object.assign(t, changes, { updatedAt: stamp })
-        // Trocar para ou de cartão de crédito muda em que fatura cada ocorrência cai.
+        // Trocar para ou de cartão de crédito, ou mover de fatura, muda em que fatura cada ocorrência cai.
         if (isCredit(method)) t.dueDate = dueDateFor(t.date, method, t.invoiceShift)
         else if (wasCredit) {
           t.dueDate = t.date

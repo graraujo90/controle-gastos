@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { dueDateFor } from '../domain/fatura'
 import { db } from './db'
 import {
   deleteInstallments, deleteTransactions, resetAll, saveInstallments, saveMethod, saveTransaction, setCategoryMany,
-  deleteSplit, saveSplit, setPaid, setPaidMany, shiftInstallments, updateInstallmentGroup,
+  deleteSplit, extendRecurrences, saveRecurring, saveSplit, setPaid, setPaidMany, shiftInstallments, updateFollowing,
+  updateInstallmentGroup,
 } from './repo'
 import type { Transaction } from './types'
 
@@ -223,5 +225,57 @@ describe('compra dividida em categorias', () => {
     const { parts } = await market()
     await deleteSplit(parts[0].splitGroupId!)
     expect(await db.transactions.count()).toBe(0)
+  })
+})
+
+describe('recorrência no cartão movida de fatura', () => {
+  beforeEach(async () => {
+    await resetAll()
+  })
+
+  // Assinatura no dia 26, cartão que fecha dia 25 e vence dia 5: sem ajuste, cai duas faturas à frente.
+  async function subscription(count: number | undefined, invoiceShift?: number) {
+    const category = (await db.categories.toArray()).find((c) => c.type === 'despesa' && !c.parentId)!
+    const cardId = await saveMethod({ name: 'Cartão teste', kind: 'credito', use: 'pagamento', closingDay: 25, dueDay: 5, archived: false })
+    const card = (await db.paymentMethods.get(cardId))!
+    await saveRecurring(
+      {
+        type: 'despesa', date: '2026-10-26', dueDate: dueDateFor('2026-10-26', card, invoiceShift), amount: 3990,
+        categoryId: category.id, subcategoryId: null, paymentMethodId: cardId, description: 'streaming', paid: false,
+        resgate: false, invoiceShift,
+      },
+      { frequency: 'mensal', count },
+    )
+    return card
+  }
+  const occurrences = async () =>
+    (await db.transactions.toArray()).sort((a, b) => a.recurrenceNumber! - b.recurrenceNumber!)
+
+  it('todas as ocorrências caem na fatura movida', async () => {
+    await subscription(3, -1)
+    const txs = await occurrences()
+    expect(txs.map((t) => t.dueDate)).toEqual(['2026-11-05', '2026-12-05', '2027-01-05'])
+    expect(txs.every((t) => t.invoiceShift === -1)).toBe(true)
+  })
+
+  it('as criadas depois pelo horizonte seguem o ajuste', async () => {
+    const card = await subscription(undefined, -1)
+    await extendRecurrences()
+    const txs = await occurrences()
+    expect(txs.length).toBeGreaterThan(3)
+    expect(txs.every((t) => t.dueDate === dueDateFor(t.date, card, -1))).toBe(true)
+  })
+
+  it('"este e os próximos" leva o ajuste para as seguintes e para a regra; as anteriores ficam', async () => {
+    await subscription(4)
+    const [, second] = await occurrences()
+    await updateFollowing(second, {
+      type: 'despesa', amount: 3990, categoryId: second.categoryId, subcategoryId: null,
+      paymentMethodId: second.paymentMethodId, description: 'streaming', resgate: false, invoiceShift: -1,
+    })
+    const txs = await occurrences()
+    // 1ª sem ajuste; 2ª é gravada pelo formulário; 3ª e 4ª uma fatura antes.
+    expect(txs.map((t) => t.dueDate)).toEqual(['2026-12-05', '2027-01-05', '2027-01-05', '2027-02-05'])
+    expect((await db.recurrences.toArray())[0].invoiceShift).toBe(-1)
   })
 })
