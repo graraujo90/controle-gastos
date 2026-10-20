@@ -1,11 +1,11 @@
-import { CircleCheck, ListChecks, SlidersHorizontal, Tag, Trash2, X } from 'lucide-react'
+import { CircleCheck, ListChecks, SlidersHorizontal, Tag, Trash2, Users, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { MonthPicker } from '../../components/MonthPicker'
 import { YearPicker } from '../../components/YearPicker'
-import { deleteTransactions, setCategoryMany, setPaidMany } from '../../db/repo'
+import { deleteTransactions, setCategoryMany, setPaidMany, setPersonMany } from '../../db/repo'
 import { TX_LABEL_PLURAL, TX_TYPES, type Transaction, type TxType } from '../../db/types'
 import type { PendingKind } from '../../domain/contas'
 import {
@@ -13,10 +13,12 @@ import {
   type TxFilter,
 } from '../../domain/filtro'
 import { groupPurchases, type Purchase } from '../../domain/parcelas'
+import { FAMILY } from '../../domain/pessoas'
 import { summarize } from '../../domain/resumo'
 import { dayLabel, formatBRL, monthLabel, monthOf, todayISO } from '../../lib/format'
 import { CategoriaLoteModal } from './CategoriaLoteModal'
 import { FiltroModal, SITUATION_LABEL } from './FiltroModal'
+import { PessoaLoteModal } from './PessoaLoteModal'
 import { TransactionRow } from './TransactionRow'
 import { useMonthData, type ViewBy } from './useMonthData'
 
@@ -56,14 +58,14 @@ export function LancamentosPage() {
   // Seleção de vários: guarda a linha (o lançamento que a representa); só vale o que está visível.
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [batch, setBatch] = useState<'excluir' | 'categoria' | null>(null)
+  const [batch, setBatch] = useState<'excluir' | 'categoria' | 'pessoa' | null>(null)
 
   // "Em atraso" olha tudo que está vencido, de qualquer mês; aí período e data da compra não se aplicam.
   const overdue = filter.situacao === 'atrasado'
   const listBy: ViewBy = overdue ? 'vencimento' : view
   // Intervalo de datas também deixa o seletor de mês e ano de lado.
   const ranged = !overdue && !!(filter.de || filter.ate)
-  const { transactions, categories, methods, loading } = useMonthData(
+  const { transactions, categories, methods, people, loading } = useMonthData(
     month,
     listBy,
     overdue ? 'atrasados' : ranged ? { de: filter.de, ate: filter.ate } : period,
@@ -173,6 +175,10 @@ export function LancamentosPage() {
   tag(filter.texto, `"${filter.texto}"`, { ...filter, texto: undefined })
   tag(filter.parcelado, 'Parceladas', { ...filter, parcelado: undefined })
   tag(filter.recorrente, 'Recorrentes', { ...filter, recorrente: undefined })
+  tag(filter.pessoa, filter.pessoa === FAMILY ? 'Família' : (people.get(filter.pessoa ?? '')?.name ?? '—'), {
+    ...filter,
+    pessoa: undefined,
+  })
   tag(ranged, rangeLabel(filter), { ...filter, de: undefined, ate: undefined })
 
   const quick = (changes: Pick<TxFilter, 'tipo' | 'pendencia'>) =>
@@ -359,6 +365,7 @@ export function LancamentosPage() {
                       tx={p.tx}
                       categories={categories}
                       methods={methods}
+                      people={people}
                       view={listBy}
                       purchase={p}
                       select={rowSelect(p)}
@@ -383,6 +390,9 @@ export function LancamentosPage() {
             title={mixedTypes ? 'Escolha lançamentos de um tipo só' : undefined}
             onClick={() => setBatch('categoria')}
           />
+          {people.size > 0 && (
+            <BatchButton label="Pessoa" icon={Users} disabled={chosen.length === 0} onClick={() => setBatch('pessoa')} />
+          )}
         </div>
       )}
 
@@ -421,11 +431,25 @@ export function LancamentosPage() {
         />
       )}
 
+      {batch === 'pessoa' && chosen.length > 0 && (
+        <PessoaLoteModal
+          count={chosen.length}
+          people={people}
+          onClose={() => setBatch(null)}
+          onApply={async (personId) => {
+            await setPersonMany(chosen.map((t) => t.id), personId)
+            setBatch(null)
+            stopSelecting()
+          }}
+        />
+      )}
+
       {filtersOpen && (
         <FiltroModal
           filter={filter}
           categories={categories}
           methods={methods}
+          people={people}
           onClose={() => setFiltersOpen(false)}
           onApply={(next) => {
             apply(next)

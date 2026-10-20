@@ -1,13 +1,17 @@
 import { useState, type FormEvent } from 'react'
 import { Modal } from '../../components/Modal'
 import { MoneyInput } from '../../components/MoneyInput'
-import { TX_LABEL, TX_LABEL_PLURAL, TX_TYPES, type Category, type PaymentMethod, type TxType } from '../../db/types'
+import {
+  TX_LABEL, TX_LABEL_PLURAL, TX_TYPES, type Category, type PaymentMethod, type Person, type TxType,
+} from '../../db/types'
 import { ALL_CREDIT, NO_SUB, type Situation, type TxFilter } from '../../domain/filtro'
+import { FAMILY } from '../../domain/pessoas'
 
 interface Props {
   filter: TxFilter
   categories: Map<string, Category>
   methods: Map<string, PaymentMethod>
+  people: Map<string, Person>
   onApply: (filter: TxFilter) => void
   onClose: () => void
 }
@@ -21,7 +25,7 @@ export const SITUATION_LABEL: Record<Situation, string> = {
 }
 
 /** Janela com todos os critérios de filtro. Só altera a lista ao tocar em "Aplicar". */
-export function FiltroModal({ filter, categories, methods, onApply, onClose }: Props) {
+export function FiltroModal({ filter, categories, methods, people, onApply, onClose }: Props) {
   const [draft, setDraft] = useState<TxFilter>(filter)
   const set = (changes: Partial<TxFilter>) => setDraft((d) => ({ ...d, ...changes }))
 
@@ -32,6 +36,7 @@ export function FiltroModal({ filter, categories, methods, onApply, onClose }: P
   const subs = all.filter((c) => c.parentId === draft.categoria && draft.categoria && keep(c, draft.subcategoria)).sort(byName)
   const methodList = [...methods.values()].filter((m) => keep(m, draft.forma)).sort(byName)
   const hasCards = methodList.some((m) => m.kind === 'credito')
+  const personList = [...people.values()].filter((p) => keep(p, draft.pessoa)).sort(byName)
   const types = draft.tipo ? [draft.tipo] : TX_TYPES
 
   function changeType(tipo?: TxType) {
@@ -119,6 +124,19 @@ export function FiltroModal({ filter, categories, methods, onApply, onClose }: P
             ))}
           </select>
         </div>
+
+        {personList.length > 0 && (
+          <div>
+            <label className="label" htmlFor="ft-pessoa">De quem é</label>
+            <select id="ft-pessoa" className="field" value={draft.pessoa ?? ''} onChange={(e) => set({ pessoa: e.target.value || undefined })}>
+              <option value="">Todos</option>
+              <option value={FAMILY}>Família (sem pessoa)</option>
+              {personList.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>

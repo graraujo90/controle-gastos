@@ -38,9 +38,11 @@ export function useMonthData(month: string, by: ViewBy = 'vencimento', scope: Sc
   }, [month, by, key])
   const categoryList = useLiveQuery(() => db.categories.toArray(), [])
   const methodList = useLiveQuery(() => db.paymentMethods.toArray(), [])
+  const peopleList = useLiveQuery(() => db.people.toArray(), [])
 
   const categories = useMemo(() => new Map((categoryList ?? []).map((c) => [c.id, c])), [categoryList])
   const methods = useMemo(() => new Map((methodList ?? []).map((m) => [m.id, m])), [methodList])
+  const people = useMemo(() => new Map((peopleList ?? []).map((p) => [p.id, p])), [peopleList])
 
-  return { transactions: transactions ?? [], categories, methods, loading: !transactions }
+  return { transactions: transactions ?? [], categories, methods, people, loading: !transactions }
 }

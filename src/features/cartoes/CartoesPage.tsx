@@ -6,7 +6,7 @@ import { useApp } from '../../app/AppContext'
 import { MonthPicker } from '../../components/MonthPicker'
 import { db } from '../../db/db'
 import { setInvoicePaid } from '../../db/repo'
-import type { Category, PaymentMethod, Transaction } from '../../db/types'
+import type { Category, PaymentMethod, Person, Transaction } from '../../db/types'
 import { invoicesByMonth } from '../../domain/cartoes'
 import { invoiceValue } from '../../domain/resumo'
 import { formatBRL, monthLabel, shortDate, todayISO, withDay } from '../../lib/format'
@@ -19,10 +19,11 @@ interface CardProps {
   month: string
   categories: Map<string, Category>
   methods: Map<string, PaymentMethod>
+  people: Map<string, Person>
 }
 
 /** Linha compacta com a fatura do mês; o restante (limite, lançamentos, próximas faturas) abre ao tocar. */
-function CardInvoice({ card, transactions, month, categories, methods }: CardProps) {
+function CardInvoice({ card, transactions, month, categories, methods, people }: CardProps) {
   const { setMonth } = useApp()
   const [open, setOpen] = useState(false)
 
@@ -101,7 +102,7 @@ function CardInvoice({ card, transactions, month, categories, methods }: CardPro
               </h3>
               <div className="card divide-y divide-slate-100 overflow-hidden">
                 {items.map((t) => (
-                  <TransactionRow key={t.id} tx={t} categories={categories} methods={methods} view="vencimento" />
+                  <TransactionRow key={t.id} tx={t} categories={categories} methods={methods} people={people} view="vencimento" />
                 ))}
               </div>
             </div>
@@ -132,9 +133,11 @@ export function CartoesPage() {
   const { month } = useApp()
   const methodList = useLiveQuery(() => db.paymentMethods.toArray(), [])
   const categoryList = useLiveQuery(() => db.categories.toArray(), [])
+  const peopleList = useLiveQuery(() => db.people.toArray(), [])
   const transactions = useLiveQuery(() => db.transactions.toArray(), []) ?? []
   const methods = useMemo(() => new Map((methodList ?? []).map((m) => [m.id, m])), [methodList])
   const categories = useMemo(() => new Map((categoryList ?? []).map((c) => [c.id, c])), [categoryList])
+  const people = useMemo(() => new Map((peopleList ?? []).map((p) => [p.id, p])), [peopleList])
 
   const byCard = new Map<string, Transaction[]>()
   for (const t of transactions) {
@@ -173,6 +176,7 @@ export function CartoesPage() {
                 transactions={byCard.get(card.id) ?? []}
                 month={month}
                 categories={categories}
+                people={people}
                 methods={methods}
               />
             ))}

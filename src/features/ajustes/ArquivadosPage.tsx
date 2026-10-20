@@ -2,8 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { ArchiveRestore } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { db } from '../../db/db'
-import { restoreCategory, restoreMethod } from '../../db/repo'
-import { METHOD_KIND_LABEL, TX_LABEL } from '../../db/types'
+import { restoreCategory, restoreMethod, restorePerson } from '../../db/repo'
+import { METHOD_KIND_LABEL, PERSON_KIND_LABEL, TX_LABEL } from '../../db/types'
 import { BackLink } from './BackLink'
 
 interface Item {
@@ -42,6 +42,7 @@ function Section({ title, items, empty }: { title: string; items: Item[]; empty:
 export function ArquivadosPage() {
   const categories = useLiveQuery(() => db.categories.toArray(), []) ?? []
   const methods = useLiveQuery(() => db.paymentMethods.toArray(), []) ?? []
+  const people = useLiveQuery(() => db.people.toArray(), []) ?? []
   const parentName = (id: string | null) => categories.find((c) => c.id === id)?.name
 
   const archivedCategories: Item[] = categories
@@ -64,6 +65,11 @@ export function ArquivadosPage() {
       restore: () => restoreMethod(m.id),
     }))
 
+  const archivedPeople: Item[] = people
+    .filter((p) => p.archived)
+    .sort(byName)
+    .map((p) => ({ id: p.id, name: p.name, hint: PERSON_KIND_LABEL[p.kind], restore: () => restorePerson(p.id) }))
+
   return (
     <div className="space-y-4">
       <BackLink title="Arquivados" />
@@ -72,6 +78,7 @@ export function ArquivadosPage() {
       </p>
       <Section title="Categorias" items={archivedCategories} empty="Nenhuma categoria arquivada." />
       <Section title="Formas de recebimento e pagamento" items={archivedMethods} empty="Nenhuma forma arquivada." />
+      <Section title="Pessoas" items={archivedPeople} empty="Nenhuma pessoa arquivada." />
     </div>
   )
 }

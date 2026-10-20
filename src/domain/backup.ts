@@ -1,5 +1,7 @@
 /** Tabelas que entram no arquivo de backup, na ordem em que são gravadas. */
-export const BACKUP_TABLES = ['categories', 'paymentMethods', 'transactions', 'budgets', 'recurrences', 'settings'] as const
+export const BACKUP_TABLES = [
+  'categories', 'paymentMethods', 'people', 'transactions', 'budgets', 'recurrences', 'settings',
+] as const
 export type BackupTable = (typeof BACKUP_TABLES)[number]
 
 export const BACKUP_APP = 'controle-gastos'
@@ -7,9 +9,9 @@ export const BACKUP_APP = 'controle-gastos'
 /**
  * Versão do formato dos arquivos (backup e sincronização). Sobe quando entra uma tabela nova: assim um
  * aparelho com versão antiga do app recusa o arquivo, em vez de regravá-lo sem os dados que não conhece.
- * 2 = inclui as recorrências. Arquivos de formato anterior continuam sendo lidos.
+ * 2 = inclui as recorrências; 3 = inclui as pessoas. Arquivos de formato anterior continuam sendo lidos.
  */
-export const FILE_FORMAT = 2
+export const FILE_FORMAT = 3
 
 export interface Backup {
   app: typeof BACKUP_APP

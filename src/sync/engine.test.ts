@@ -135,6 +135,20 @@ describe('sincronização entre aparelhos', () => {
     expect(await descriptions(again)).toEqual(['farmácia'])
   })
 
+  it('pessoas e de quem é cada lançamento chegam ao outro aparelho', async () => {
+    const a = await newDevice()
+    await a.connect('dono')
+    const ana = await a.repo.savePerson({ name: 'Ana', kind: 'adulto', archived: false })
+    const id = await addExpense(a, 'salão')
+    await a.repo.setPersonMany([id], ana)
+    await a.engine.syncNow()
+
+    const b = await newDevice()
+    await b.connect('convidado')
+    expect((await b.db.people.toArray()).map((p) => p.name)).toEqual(['Ana'])
+    expect((await b.db.transactions.get(id))!.personId).toBe(ana)
+  })
+
   it('exclusão em um aparelho remove o lançamento da nuvem', async () => {
     const a = await newDevice()
     const id = await addExpense(a, 'mercado')

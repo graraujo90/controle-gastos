@@ -13,6 +13,7 @@ import {
 } from '../../db/repo'
 import { TX_LABEL, TX_TYPES, type PaymentMethod, type Transaction, type TxType } from '../../db/types'
 import { splitError } from '../../domain/divisao'
+import { defaultPersonId } from '../../domain/pessoas'
 import { dueDateFor, isCredit, MAX_INVOICE_SHIFT } from '../../domain/fatura'
 import { planInstallments, type InstallmentMode } from '../../domain/parcelas'
 import {
@@ -30,6 +31,25 @@ interface Props {
 const MAX_INSTALLMENTS = 72
 
 type Scope = 'este' | 'proximos' | 'todas'
+
+const PERSON_KEY = 'lancamentos.pessoa'
+
+// O adulto das receitas e investimentos é preferência de cada aparelho; sem armazenamento, vale o padrão.
+function storedPerson(): string | null {
+  try {
+    return localStorage.getItem(PERSON_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberPerson(id: string) {
+  try {
+    localStorage.setItem(PERSON_KEY, id)
+  } catch {
+    // sem armazenamento: o próximo lançamento usa o primeiro adulto
+  }
+}
 
 const fullDate = (iso: string) => `${shortDate(iso)}/${iso.slice(0, 4)}`
 
@@ -66,6 +86,8 @@ export function TransactionForm({ tx, onClose }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Criar subcategoria sem sair do lançamento.
   const [newSub, setNewSub] = useState<string | null>(null)
+  // De quem é: null = segue o padrão do tipo (despesa da família; receita e investimento de um adulto).
+  const [personChoice, setPersonChoice] = useState<string | null>(tx ? (tx.personId ?? '') : null)
   // Compra dividida em categorias: null = uma categoria só.
   const [parts, setParts] = useState<SplitRow[] | null>(null)
   const [error, setError] = useState('')
@@ -74,6 +96,7 @@ export function TransactionForm({ tx, onClose }: Props) {
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, 'pt-BR')
   const categories = (useLiveQuery(() => db.categories.toArray(), []) ?? []).sort(byName)
   const methods = (useLiveQuery(() => db.paymentMethods.toArray(), []) ?? []).sort(byName)
+  const allPeople = (useLiveQuery(() => db.people.toArray(), []) ?? []).sort(byName)
 
   // Abrir uma parte de uma compra dividida edita a divisão inteira: carrega as partes uma vez.
   const savedParts = useLiveQuery<Transaction[] | null>(
@@ -101,6 +124,10 @@ export function TransactionForm({ tx, onClose }: Props) {
   const inflow = type === 'receita' || resgate
   const methodOptions = methods.filter((m) => usable(m, type, inflow) && (!m.archived || m.id === methodId))
   const method = methods.find((m) => m.id === methodId)
+  // Arquivadas só aparecem se já forem a pessoa do lançamento em edição.
+  const people = allPeople.filter((p) => !p.archived || p.id === personChoice)
+  const adults = people.filter((p) => p.kind === 'adulto' && !p.archived)
+  const personId = personChoice ?? defaultPersonId(type, adults, storedPerson())
 
   const expense = type === 'despesa'
   const credit = expense && isCredit(method)
@@ -142,6 +169,8 @@ export function TransactionForm({ tx, onClose }: Props) {
 
   function changeType(next: TxType) {
     setType(next)
+    // Num lançamento novo, trocar o tipo volta ao padrão de pessoa do tipo novo.
+    if (!tx) setPersonChoice(null)
     setCategoryId('')
     setSubcategoryId('')
     if (method && !usable(method, next, next === 'receita' || (next === 'investimento' && resgateOn))) setMethodId('')
@@ -185,7 +214,10 @@ export function TransactionForm({ tx, onClose }: Props) {
       invoiceShift: invoiceShift || undefined,
       myShare: share,
       estorno: estorno || undefined,
+      personId: personId || undefined,
     }
+    // Receita e investimento: o aparelho lembra o adulto escolhido para o próximo lançamento.
+    if (type !== 'despesa' && adults.some((p) => p.id === personId)) rememberPerson(personId)
     if (repeating) await saveRecurring({ ...base, amount, dueDate }, { frequency: repeat, count: repeatCount })
     else if (plan) await saveInstallments(base, plan)
     else await saveTransaction({ ...base, id: tx?.id, amount, dueDate })
@@ -194,6 +226,7 @@ export function TransactionForm({ tx, onClose }: Props) {
         tx,
         {
           categoryId, subcategoryId: base.subcategoryId, paymentMethodId: methodId, description: base.description,
+          personId: base.personId,
           // Valor e minha parte só vão para as outras parcelas quando foram mudados aqui.
           ...(amount !== tx.amount && { amount }),
           ...(share !== tx.myShare && { myShare: share }),
@@ -209,6 +242,7 @@ export function TransactionForm({ tx, onClose }: Props) {
       await updateFollowing(tx, {
         type, amount, categoryId, subcategoryId: base.subcategoryId, paymentMethodId: methodId,
         description: base.description, resgate, myShare: share, invoiceShift: invoiceShift || undefined,
+        personId: base.personId,
       })
     }
     // Leva a tela para o mês em que o lançamento entrou (o do vencimento).
@@ -470,6 +504,25 @@ export function TransactionForm({ tx, onClose }: Props) {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {people.length > 0 && !splitting && (
+          <div>
+            <label className="label" htmlFor="tx-pessoa">De quem é</label>
+            <select id="tx-pessoa" className="field" value={personId} onChange={(e) => setPersonChoice(e.target.value)}>
+              <option value="">Família</option>
+              {(['adulto', 'dependente'] as const).map((kind) => {
+                const group = people.filter((p) => p.kind === kind)
+                return group.length === 0 ? null : (
+                  <optgroup key={kind} label={kind === 'adulto' ? 'Adultos' : 'Dependentes'}>
+                    {group.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </optgroup>
+                )
+              })}
+            </select>
           </div>
         )}
 

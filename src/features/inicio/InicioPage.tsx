@@ -26,7 +26,7 @@ interface PendingRow {
 
 export function InicioPage() {
   const { month, openForm } = useApp()
-  const { transactions, categories, methods, loading } = useMonthData(month)
+  const { transactions, categories, methods, people, loading } = useMonthData(month)
   const summary = summarize(transactions)
   const breakdown = expenseBreakdown(transactions.filter((t) => t.type === 'despesa'))
   const recent = [...transactions]
@@ -187,7 +187,7 @@ export function InicioPage() {
           </div>
           <div className="card divide-y divide-slate-100 overflow-hidden">
             {recent.map((t) => (
-              <TransactionRow key={t.id} tx={t} categories={categories} methods={methods} />
+              <TransactionRow key={t.id} tx={t} categories={categories} methods={methods} people={people} />
             ))}
           </div>
         </section>

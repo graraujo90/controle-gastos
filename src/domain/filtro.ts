@@ -1,5 +1,6 @@
 import { TX_TYPES, type Transaction, type TxType } from '../db/types'
 import { pendingKind, type PendingKind } from './contas'
+import { FAMILY } from './pessoas'
 
 export type Situation = 'confirmado' | 'pendente' | 'atrasado'
 export type Period = 'mes' | 'ano'
@@ -29,6 +30,8 @@ export interface TxFilter {
   parcelado?: boolean
   /** Só lançamentos criados por uma recorrência. */
   recorrente?: boolean
+  /** De quem é: id da pessoa, ou FAMILY (lançamentos sem pessoa). */
+  pessoa?: string
   /**
    * Intervalo de datas ('AAAA-MM-DD', inclusive), pela data do "Ver por" da lista (vencimento ou compra).
    * Com intervalo, o seletor de mês e ano fica de lado.
@@ -65,6 +68,7 @@ export function parseFilter(params: URLSearchParams): TxFilter {
     texto: params.get('q')?.trim() || undefined,
     parcelado: params.get('parc') === '1' || undefined,
     recorrente: params.get('rec') === '1' || undefined,
+    pessoa: params.get('pessoa') || undefined,
     de,
     ate,
   }
@@ -86,6 +90,7 @@ export function filterToParams(filter: TxFilter, period: Period = 'mes'): URLSea
     ['q', filter.texto?.trim()],
     ['parc', filter.parcelado ? '1' : undefined],
     ['rec', filter.recorrente ? '1' : undefined],
+    ['pessoa', filter.pessoa],
     ['de', filter.de],
     ['ate', filter.ate],
   ]
@@ -115,7 +120,7 @@ export interface FilterContext {
 
 type Filterable = Pick<
   Transaction,
-  'type' | 'resgate' | 'paid' | 'date' | 'dueDate' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'installmentGroupId' | 'recurrenceId'
+  'type' | 'resgate' | 'paid' | 'date' | 'dueDate' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'installmentGroupId' | 'recurrenceId' | 'personId'
 >
 
 const plain = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -146,6 +151,7 @@ export function matchesFilter(
   if (filter.max !== undefined && shown.amount > filter.max) return false
   if (filter.parcelado && !tx.installmentGroupId) return false
   if (filter.recorrente && !tx.recurrenceId) return false
+  if (filter.pessoa && (filter.pessoa === FAMILY ? !!tx.personId : tx.personId !== filter.pessoa)) return false
   const day = ctx.by === 'compra' ? tx.date : tx.dueDate
   if (filter.de && day < filter.de) return false
   if (filter.ate && day > filter.ate) return false

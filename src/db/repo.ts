@@ -7,7 +7,7 @@ import type { Installment } from '../domain/parcelas'
 import { missingOccurrences, occurrenceDate } from '../domain/recorrencia'
 import { addMonthsToDate, monthOf, todayISO } from '../lib/format'
 import { db } from './db'
-import type { Category, PaymentMethod, Recurrence, Transaction } from './types'
+import type { Category, PaymentMethod, Person, Recurrence, Transaction } from './types'
 
 const now = () => new Date().toISOString()
 
@@ -108,6 +108,38 @@ export async function removeMethod(id: string): Promise<'excluida' | 'arquivada'
 
 export const restoreMethod = (id: string) =>
   db.paymentMethods.update(id, { archived: false, updatedAt: now() })
+
+// ---------- pessoas ----------
+
+export async function savePerson(input: Input<Person>): Promise<string> {
+  if (input.id) {
+    const { id, ...changes } = input
+    await db.people.update(id, { ...changes, updatedAt: now() })
+    return id
+  }
+  const id = crypto.randomUUID()
+  await db.people.add({ ...input, id, createdAt: now(), updatedAt: now() })
+  return id
+}
+
+/** Pessoa com lançamentos ou recorrências é só arquivada, para não perder o histórico. */
+export async function removePerson(id: string): Promise<'excluida' | 'arquivada'> {
+  const used =
+    (await db.transactions.where('personId').equals(id).count()) +
+    (await db.recurrences.filter((r) => r.personId === id).count())
+  if (used > 0) {
+    await db.people.update(id, { archived: true, updatedAt: now() })
+    return 'arquivada'
+  }
+  await remove('people', [id])
+  return 'excluida'
+}
+
+export const restorePerson = (id: string) => db.people.update(id, { archived: false, updatedAt: now() })
+
+/** Troca de quem são vários lançamentos (null = família). */
+export const setPersonMany = (ids: string[], personId: string | null) =>
+  db.transactions.bulkUpdate(ids.map((key) => ({ key, changes: { personId: personId ?? undefined, updatedAt: now() } })))
 
 export const LAST_BACKUP = 'ultimoBackup'
 
@@ -226,6 +258,7 @@ function buildOccurrences(rule: Recurrence, numbers: number[], method: PaymentMe
       resgate: rule.resgate,
       ...(rule.myShare !== undefined && { myShare: rule.myShare }),
       ...(rule.invoiceShift && isCredit(method) && { invoiceShift: rule.invoiceShift }),
+      ...(rule.personId && { personId: rule.personId }),
       date,
       dueDate,
       month: monthOf(dueDate),
@@ -274,6 +307,7 @@ export async function saveRecurring(
     resgate: input.resgate,
     myShare: input.myShare,
     invoiceShift: input.invoiceShift,
+    personId: input.personId,
     createdAt: stamp,
     updatedAt: stamp,
   }
@@ -290,7 +324,7 @@ export async function extendRecurrences(): Promise<void> {
 type RecurringChanges = Pick<
   Transaction,
   | 'type' | 'amount' | 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'resgate' | 'myShare'
-  | 'invoiceShift'
+  | 'invoiceShift' | 'personId'
 >
 
 /**
@@ -430,14 +464,14 @@ const inScope = (tx: Transaction, scope: InstallmentScope) => (t: Transaction) =
   scope === 'todas' || (t.installmentNumber ?? 0) >= (tx.installmentNumber ?? 0)
 
 /**
- * Aplica categoria, subcategoria, forma e descrição às outras parcelas da mesma compra. Valor e minha parte
+ * Aplica categoria, subcategoria, forma, descrição e pessoa às outras parcelas da mesma compra. Valor e minha parte
  * só vêm em `changes` quando a pessoa os mudou, e então valem por parcela (o total da compra muda junto);
  * sem mudança, cada parcela mantém o seu, inclusive os centavos da 1ª. Trocar de ou para cartão de
  * crédito recalcula a fatura de cada parcela.
  */
 export async function updateInstallmentGroup(
   tx: Transaction,
-  changes: Pick<Transaction, 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description'> &
+  changes: Pick<Transaction, 'categoryId' | 'subcategoryId' | 'paymentMethodId' | 'description' | 'personId'> &
     Partial<Pick<Transaction, 'amount' | 'myShare'>>,
   scope: InstallmentScope,
 ): Promise<void> {

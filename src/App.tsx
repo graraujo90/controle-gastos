@@ -7,6 +7,7 @@ import { BackupPage } from './features/ajustes/BackupPage'
 import { CategoriasPage } from './features/ajustes/CategoriasPage'
 import { FormasPage } from './features/ajustes/FormasPage'
 import { MaisPage } from './features/ajustes/MaisPage'
+import { PessoasPage } from './features/ajustes/PessoasPage'
 import { RecorrenciasPage } from './features/ajustes/RecorrenciasPage'
 import { SincronizacaoPage } from './features/ajustes/SincronizacaoPage'
 import { CartoesPage } from './features/cartoes/CartoesPage'
@@ -34,6 +35,7 @@ export function App() {
           <Route path="mais" element={<MaisPage />} />
           <Route path="mais/categorias" element={<CategoriasPage />} />
           <Route path="mais/formas" element={<FormasPage />} />
+          <Route path="mais/pessoas" element={<PessoasPage />} />
           <Route path="mais/arquivados" element={<ArquivadosPage />} />
           <Route path="mais/aparencia" element={<AparenciaPage />} />
           <Route path="mais/recorrencias" element={<RecorrenciasPage />} />

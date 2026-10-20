@@ -4,7 +4,8 @@ import { buildBackup, parseBackup } from './backup'
 const data = {
   categories: [{ id: 'c1', name: 'Moradia' }],
   paymentMethods: [{ id: 'm1', name: 'Pix' }],
-  transactions: [{ id: 't1', amount: 1000 }],
+  people: [{ id: 'p1', name: 'Ana', kind: 'adulto' }],
+  transactions: [{ id: 't1', amount: 1000, personId: 'p1' }],
   budgets: [],
   recurrences: [{ id: 'r1', frequency: 'mensal' }],
   settings: [{ key: 'saldoInicial', value: 5000 }],
@@ -32,6 +33,12 @@ describe('backup', () => {
     const text = JSON.stringify({ app: 'controle-gastos', format: 1, exportedAt: '', data: older })
     expect(parseBackup(text).data.recurrences).toEqual([])
     expect(parseBackup(text).data.transactions).toEqual(data.transactions)
+  })
+
+  it('lê backup do formato 2, sem pessoas', () => {
+    const { people: _omit, ...older } = data
+    const text = JSON.stringify({ app: 'controle-gastos', format: 2, exportedAt: '', data: older })
+    expect(parseBackup(text).data.people).toEqual([])
   })
 
   it('recusa arquivo que não é JSON', () => {

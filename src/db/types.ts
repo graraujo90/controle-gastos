@@ -49,6 +49,21 @@ export const METHOD_USE_LABEL: Record<MethodUse, string> = {
   pagamento: 'Só pagamento',
 }
 
+/** Adulto tem saldo próprio na análise por pessoa; o que é de dependente entra no bolo da família. */
+export type PersonKind = 'adulto' | 'dependente'
+
+export const PERSON_KIND_LABEL: Record<PersonKind, string> = {
+  adulto: 'Adulto',
+  dependente: 'Dependente',
+}
+
+/** Pessoa do orçamento familiar. Excluir uma pessoa já usada só arquiva. */
+export interface Person extends Base {
+  name: string
+  kind: PersonKind
+  archived: boolean
+}
+
 export interface PaymentMethod extends Base {
   name: string
   kind: MethodKind
@@ -95,6 +110,8 @@ export interface Transaction extends Base {
   estorno?: boolean
   /** Compra dividida em categorias: as partes têm o mesmo grupo, data, forma e situação de pagamento. */
   splitGroupId?: string
+  /** De quem é o lançamento (adulto ou dependente). Vazio = da família. */
+  personId?: string
 }
 
 /**
@@ -125,6 +142,8 @@ export interface Recurrence extends Base {
   myShare?: number
   /** Cartão de crédito: todas as ocorrências movidas para a fatura anterior (−1) ou seguinte (+1). */
   invoiceShift?: number
+  /** De quem é cada ocorrência. Vazio = da família. */
+  personId?: string
 }
 
 export interface Budget extends Base {

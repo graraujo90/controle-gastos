@@ -162,3 +162,16 @@ describe('intervalo de datas', () => {
     expect(parseFilter(new URLSearchParams('de=2026-10-15&ate=2026-09-01'))).toMatchObject({ de: '2026-09-01', ate: '2026-10-15' })
   })
 })
+
+describe('filtro por pessoa', () => {
+  it('pessoa escolhida, ou família (sem pessoa)', () => {
+    expect(pass(tx({ personId: 'ana' }), { pessoa: 'ana' })).toBe(true)
+    expect(pass(tx({ personId: 'ana' }), { pessoa: 'pedro' })).toBe(false)
+    expect(pass(tx(), { pessoa: 'familia' })).toBe(true)
+    expect(pass(tx({ personId: 'ana' }), { pessoa: 'familia' })).toBe(false)
+  })
+
+  it('vai e volta pelo endereço', () => {
+    expect(parseFilter(filterToParams({ pessoa: 'ana' })).pessoa).toBe('ana')
+  })
+})

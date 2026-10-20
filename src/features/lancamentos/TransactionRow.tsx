@@ -4,7 +4,7 @@ import { useApp } from '../../app/AppContext'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { setPaid } from '../../db/repo'
-import type { Category, PaymentMethod, Transaction } from '../../db/types'
+import type { Category, PaymentMethod, Person, Transaction } from '../../db/types'
 import { confirmWords } from '../../lib/confirmacao'
 import { formatBRL, shortDate, todayISO } from '../../lib/format'
 import type { ViewBy } from './useMonthData'
@@ -13,6 +13,8 @@ interface Props {
   tx: Transaction
   categories: Map<string, Category>
   methods: Map<string, PaymentMethod>
+  /** Pessoas cadastradas: a linha mostra de quem é o lançamento (da família não aparece). */
+  people?: Map<string, Person>
   /** Como a lista está organizada; a linha mostra a outra data quando compra e vencimento diferem. */
   view?: ViewBy
   /** Na visão por data da compra, uma compra parcelada aparece uma vez só, com o total. */
@@ -23,7 +25,7 @@ interface Props {
 
 const LONG_PRESS_MS = 500
 
-export function TransactionRow({ tx, categories, methods, view, purchase, select }: Props) {
+export function TransactionRow({ tx, categories, methods, people, view, purchase, select }: Props) {
   const { openForm } = useApp()
   const timer = useRef<number | undefined>(undefined)
   const longPressed = useRef(false)
@@ -80,7 +82,8 @@ export function TransactionRow({ tx, categories, methods, view, purchase, select
   // Conta dividida: a linha mostra o valor cheio (o da fatura); no orçamento conta a minha parte.
   const share =
     tx.myShare === undefined ? undefined : grouped ? 'conta dividida' : `sua parte ${formatBRL(tx.myShare)}`
-  const how = join([grouped ? `em ${purchase.count}×` : undefined, share, method?.name, otherDate])
+  const person = tx.personId ? people?.get(tx.personId)?.name : undefined
+  const how = join([grouped ? `em ${purchase.count}×` : undefined, person, share, method?.name, otherDate])
 
   return (
     <div className={`flex items-center ${select?.selected ? 'bg-slate-100' : 'hover:bg-slate-50'}`}>

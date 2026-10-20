@@ -4,7 +4,7 @@ import type { Deletion } from '../domain/sync'
 import { monthOf, todayISO } from '../lib/format'
 import { seedCategories, seedMethods } from './seed'
 import type {
-  Budget, Category, LocalValue, PaymentMethod, Recurrence, Setting, Transaction,
+  Budget, Category, LocalValue, PaymentMethod, Person, Recurrence, Setting, Transaction,
 } from './types'
 
 export const db = new Dexie('controle-gastos') as Dexie & {
@@ -13,6 +13,7 @@ export const db = new Dexie('controle-gastos') as Dexie & {
   transactions: EntityTable<Transaction, 'id'>
   budgets: EntityTable<Budget, 'id'>
   recurrences: EntityTable<Recurrence, 'id'>
+  people: EntityTable<Person, 'id'>
   settings: EntityTable<Setting, 'key'>
   deletions: Table<Deletion, [string, string]>
   local: EntityTable<LocalValue, 'key'>
@@ -87,6 +88,13 @@ db.version(6).stores({
 db.version(7).stores({
   transactions:
     'id, month, date, dueDate, categoryId, subcategoryId, paymentMethodId, installmentGroupId, recurrenceId, splitGroupId',
+})
+
+// v8: pessoas do orçamento familiar; cada lançamento pode ser de uma pessoa (personId).
+db.version(8).stores({
+  people: 'id',
+  transactions:
+    'id, month, date, dueDate, categoryId, subcategoryId, paymentMethodId, installmentGroupId, recurrenceId, splitGroupId, personId',
 })
 
 // Roda uma única vez, quando o banco é criado no aparelho.

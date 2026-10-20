@@ -5,8 +5,8 @@ import { dueDateFor } from '../domain/fatura'
 import { db } from './db'
 import {
   deleteInstallments, deleteTransactions, resetAll, saveInstallments, saveMethod, saveTransaction, setCategoryMany,
-  deleteSplit, extendRecurrences, saveRecurring, saveSplit, setPaid, setPaidMany, shiftInstallments, updateFollowing,
-  updateInstallmentGroup,
+  deleteSplit, extendRecurrences, removePerson, savePerson, saveRecurring, saveSplit, setPaid, setPaidMany, setPersonMany,
+  shiftInstallments, updateFollowing, updateInstallmentGroup,
 } from './repo'
 import type { Transaction } from './types'
 
@@ -277,5 +277,68 @@ describe('recorrência no cartão movida de fatura', () => {
     // 1ª sem ajuste; 2ª é gravada pelo formulário; 3ª e 4ª uma fatura antes.
     expect(txs.map((t) => t.dueDate)).toEqual(['2026-12-05', '2027-01-05', '2027-01-05', '2027-02-05'])
     expect((await db.recurrences.toArray())[0].invoiceShift).toBe(-1)
+  })
+})
+
+describe('pessoas', () => {
+  beforeEach(async () => {
+    await resetAll()
+  })
+
+  const basics = async () => ({
+    category: (await db.categories.toArray()).find((c) => c.type === 'despesa' && !c.parentId)!,
+    cash: (await db.paymentMethods.toArray()).find((m) => m.kind !== 'credito')!,
+  })
+
+  it('pessoa sem uso é excluída; com lançamento, só arquivada', async () => {
+    const { category, cash } = await basics()
+    const unused = await savePerson({ name: 'Visita', kind: 'adulto', archived: false })
+    const ana = await savePerson({ name: 'Ana', kind: 'adulto', archived: false })
+    await saveTransaction({
+      type: 'despesa', date: '2026-10-10', dueDate: '2026-10-10', amount: 8000, categoryId: category.id,
+      subcategoryId: null, paymentMethodId: cash.id, description: 'salão', paid: true, resgate: false, personId: ana,
+    })
+    expect(await removePerson(unused)).toBe('excluida')
+    expect(await removePerson(ana)).toBe('arquivada')
+    expect((await db.people.get(ana))!.archived).toBe(true)
+    expect(await db.deletions.count()).toBe(1)
+  })
+
+  it('recorrência e parcelas levam a pessoa; o alcance troca a pessoa nas outras parcelas', async () => {
+    const { category, cash } = await basics()
+    const pedro = await savePerson({ name: 'Pedro', kind: 'adulto', archived: false })
+    const base = {
+      type: 'despesa' as const, date: '2026-10-10', categoryId: category.id, subcategoryId: null,
+      paymentMethodId: cash.id, description: 'futebol', paid: false, resgate: false, personId: pedro,
+    }
+    await saveRecurring({ ...base, dueDate: '2026-10-10', amount: 12000 }, { frequency: 'mensal', count: 3 })
+    expect((await db.transactions.toArray()).every((t) => t.personId === pedro)).toBe(true)
+
+    await deleteTransactions((await db.transactions.toArray()).map((t) => t.id))
+    await saveInstallments({ ...base, description: 'chuteira' }, [
+      { number: 1, amount: 5000, dueDate: '2026-10-10' },
+      { number: 2, amount: 5000, dueDate: '2026-11-10' },
+    ])
+    const [first] = (await db.transactions.toArray()).sort((a, b) => a.installmentNumber! - b.installmentNumber!)
+    await updateInstallmentGroup(first, {
+      categoryId: first.categoryId, subcategoryId: null, paymentMethodId: first.paymentMethodId,
+      description: first.description, personId: undefined,
+    }, 'todas')
+    const second = (await db.transactions.toArray()).find((t) => t.installmentNumber === 2)!
+    expect(second.personId).toBeUndefined()
+  })
+
+  it('mudar pessoa de vários, inclusive para a família', async () => {
+    const { category, cash } = await basics()
+    const ana = await savePerson({ name: 'Ana', kind: 'adulto', archived: false })
+    const add = (description: string) => saveTransaction({
+      type: 'receita', date: '2026-10-05', dueDate: '2026-10-05', amount: 100000, categoryId: category.id,
+      subcategoryId: null, paymentMethodId: cash.id, description, paid: true, resgate: false,
+    })
+    const ids = [await add('salário'), await add('bônus')]
+    await setPersonMany(ids, ana)
+    expect((await db.transactions.toArray()).every((t) => t.personId === ana)).toBe(true)
+    await setPersonMany([ids[1]], null)
+    expect((await db.transactions.get(ids[1]))!.personId).toBeUndefined()
   })
 })
