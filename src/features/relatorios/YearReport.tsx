@@ -5,13 +5,15 @@ import {
 import { Link } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
 import { MoneyInput } from '../../components/MoneyInput'
+import { PeopleBreakdown } from '../../components/PeopleBreakdown'
 import { YearPicker } from '../../components/YearPicker'
 import { CHART_THEME } from '../../components/typeStyle'
 import { db } from '../../db/db'
 import { OPENING_BALANCE, setSetting } from '../../db/repo'
-import type { Transaction } from '../../db/types'
+import type { Person, Transaction } from '../../db/types'
 import { annualSummary } from '../../domain/anual'
 import { lancamentosLink } from '../../domain/filtro'
+import { peopleYear, type ShareOverride } from '../../domain/pessoas'
 import { currentMonth, formatBRL, formatCompact, formatPercent, monthShort } from '../../lib/format'
 import { useTheme } from '../../lib/theme'
 
@@ -19,13 +21,16 @@ interface Props {
   transactions: Transaction[]
   year: number
   setYear: (year: number) => void
+  people: Map<string, Person>
+  /** Ajuste manual da proporção, por mês. */
+  overrides: Record<string, ShareOverride>
 }
 
 
 const legendText = (value: string) => <span className="text-xs text-slate-600">{value}</span>
 const money = (value: unknown) => formatBRL(Number(value))
 
-export function YearReport({ transactions, year, setYear }: Props) {
+export function YearReport({ transactions, year, setYear, people, overrides }: Props) {
   const { month, setMonth } = useApp()
   const chart = CHART_THEME[useTheme()]
   const AXIS = { fontSize: 11, fill: chart.tick }
@@ -34,6 +39,7 @@ export function YearReport({ transactions, year, setYear }: Props) {
   const openingBalance = typeof opening?.value === 'number' ? opening.value : 0
 
   const rows = annualSummary(transactions, year, openingBalance)
+  const byPerson = people.size > 0 ? peopleYear(transactions, [...people.values()], year, overrides) : null
   const thisMonth = currentMonth()
   // As linhas de acumulado param no mês atual ou no último mês com lançamentos, o que vier depois;
   // sem isso seguiriam retas pelos meses futuros, parecendo um valor real.
@@ -188,6 +194,17 @@ export function YearReport({ transactions, year, setYear }: Props) {
           inclui rentabilidade, então não representa o valor efetivamente guardado.
         </p>
       </section>
+
+      {byPerson && (
+        <PeopleBreakdown
+          summary={byPerson}
+          people={people}
+          period="ano"
+          detailed
+          // A lista usa o ano do mês em exibição.
+          onNavigate={() => setMonth(`${year}-${month.slice(5, 7)}`)}
+        />
+      )}
     </div>
   )
 }

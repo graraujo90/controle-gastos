@@ -4,10 +4,12 @@ import { Link } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
 import { CategoryBreakdown } from '../../components/CategoryBreakdown'
 import { MonthPicker } from '../../components/MonthPicker'
+import { PeopleBreakdown } from '../../components/PeopleBreakdown'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
 import { pendingByKind } from '../../domain/contas'
 import { lancamentosLink, type TxFilter } from '../../domain/filtro'
+import { peopleSummary, shareOverrideKey, type ShareOverride } from '../../domain/pessoas'
 import { budgetLevel } from '../../domain/orcamento'
 import { expenseBreakdown, summarize } from '../../domain/resumo'
 import { formatBRL, todayISO } from '../../lib/format'
@@ -28,6 +30,11 @@ export function InicioPage() {
   const { month, openForm } = useApp()
   const { transactions, categories, methods, people, loading } = useMonthData(month)
   const summary = summarize(transactions)
+  // Por pessoa: só quando há pessoas cadastradas; o ajuste manual da proporção vale só para o mês dele.
+  const override = useLiveQuery(() => db.settings.get(shareOverrideKey(month)), [month])
+  const byPerson = people.size > 0
+    ? peopleSummary(transactions, [...people.values()], override?.value as ShareOverride | undefined)
+    : null
   const breakdown = expenseBreakdown(transactions.filter((t) => t.type === 'despesa'))
   const recent = [...transactions]
     .sort((a, b) => b.dueDate.localeCompare(a.dueDate) || b.createdAt.localeCompare(a.createdAt))
@@ -176,6 +183,8 @@ export function InicioPage() {
           <button className="btn btn-primary mt-4" onClick={() => openForm()}>Fazer o primeiro lançamento</button>
         </div>
       )}
+
+      {byPerson && transactions.length > 0 && <PeopleBreakdown summary={byPerson} people={people} period="mes" />}
 
       {breakdown.categories.length > 0 && <CategoryBreakdown breakdown={breakdown} categories={categories} />}
 

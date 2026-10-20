@@ -3,6 +3,7 @@
 import { BACKUP_TABLES, buildBackup, type Backup, type BackupTable } from '../domain/backup'
 import { dueDateFor, isCredit } from '../domain/fatura'
 import { splitSlot, type SplitPart } from '../domain/divisao'
+import { shareOverrideKey, type ShareOverride } from '../domain/pessoas'
 import type { Installment } from '../domain/parcelas'
 import { missingOccurrences, occurrenceDate } from '../domain/recorrencia'
 import { addMonthsToDate, monthOf, todayISO } from '../lib/format'
@@ -171,6 +172,13 @@ export async function resetAll(): Promise<void> {
 export const OPENING_BALANCE = 'saldoInicial'
 
 export const setSetting = (key: string, value: unknown) => db.settings.put({ key, value, updatedAt: now() })
+
+/** Ajuste manual da proporção de um mês (percentual de cada adulto); null volta ao automático. */
+export async function setShareOverride(month: string, value: ShareOverride | null): Promise<void> {
+  const key = shareOverrideKey(month)
+  if (value) await setSetting(key, value)
+  else await remove('settings', [key])
+}
 
 /** Define o limite da categoria a partir do mês informado (0 = sem limite dali em diante). */
 export async function setBudget(month: string, categoryId: string, limit: number): Promise<void> {

@@ -8,7 +8,7 @@ explique decisões em linguagem simples e valide regras de negócio com ele ante
 Valem em qualquer computador: este arquivo é a memória do projeto. Quando o dono disser "quero continuar o
 desenvolvimento do app de gastos", leia este arquivo, faça `git pull` e pergunte o que ele quer ajustar.
 
-- **Estado atual**: versão 1.2.4 publicada em https://graraujo90.github.io/controle-gastos/ (etiqueta `v1.2.4`). O
+- **Estado atual**: versão 1.3.0 publicada em https://graraujo90.github.io/controle-gastos/ (etiqueta `v1.3.0`). O
   dono usa o app publicado; os dados reais dele ficam no celular e no OneDrive, nunca no navegador local. Itens em
   aberto em "Pendências e ideias", no fim deste arquivo. Atualize esta linha a cada versão publicada.
 - **Commit e push quando o dono aprova a entrega** (o pedido ou o plano aprovado já diz para publicar); na dúvida,
@@ -79,17 +79,31 @@ Vite + React + TypeScript, Tailwind v4, Dexie (IndexedDB), Recharts, vite-plugin
   relatórios e pendências; `invoiceValue()` (valor cheio; estorno negativo) vale para fatura e limite do cartão.
   Parcelas dividem a minha parte pela mesma regra do valor; recorrência mantém a parte em cada ocorrência. O
   estorno é lançado na data e na fatura em que aparece, com a categoria da compra.
-- **Compra dividida em categorias** (`domain/divisao.ts`): várias despesas ligadas por `splitGroupId`, com a mesma
-  data, forma e situação de pagamento; só salva quando as partes somam o total. Abrir uma parte edita a divisão
-  inteira; confirmar uma parte confirma todas. Só para compra à vista (sem parcelas, repetição ou estorno).
-- Na lista dá para selecionar vários (botão ou toque longo): excluir, confirmar/desfazer e mudar categoria (só
-  lançamentos de um tipo).
+- **Compra dividida** (`domain/divisao.ts`): várias despesas ligadas por `splitGroupId`, cada parte com categoria,
+  subcategoria, **pessoa** e valor (pode repetir a categoria); mesma data, forma e situação de pagamento; só salva
+  quando as partes somam o total. Vale também em **parcelas** (cada parte é uma série de parcelas no mesmo grupo;
+  `splitAcrossInstallments` faz cada parcela fechar com a fatura e cada parte com o seu total) e em **recorrência**
+  (uma regra por parte, no mesmo grupo). As partes da mesma "vez" (`splitSlot`: a parcela, ou a data) são editadas e
+  confirmadas juntas; com alcance, cada parte leva a mudança para a sua série ou regra (`updateSplit`). Sem estorno
+  nem minha parte na divisão.
+- Na lista dá para selecionar vários (botão ou toque longo): excluir, confirmar/desfazer, mudar categoria (só
+  lançamentos de um tipo) e mudar pessoa.
+- **Pessoas** (tabela `people`, `domain/pessoas.ts`): adultos e dependentes; excluir pessoa usada só arquiva. Sem
+  pessoas cadastradas, o app fica como antes. Cada lançamento pode ter `personId` (vazio = família). Despesa é da
+  família por padrão; receita e investimento, do último adulto escolhido no aparelho (`localStorage`). O que é de
+  dependente entra no bolo da família, mas fica identificado (filtro, Início, relatórios).
+- **Análise por pessoa** (`peopleSummary`/`peopleYear`): bolo da família = despesas + investimentos − receitas da
+  família e dos dependentes; dividido entre os adultos na proporção das receitas deles no mês (sem receita, partes
+  iguais), ou pelo **ajuste manual do mês** (`settings` `proporcao:AAAA-MM`, vale só para aquele mês). Saldo do
+  adulto = receitas − despesas − investimentos dele − parte no bolo; a soma dos saldos é o resultado do mês. No ano,
+  soma dos meses. Usa `counted()` (minha parte e estorno valem). O orçamento continua da família inteira.
 - Recorrência (`domain/recorrencia.ts`, tabela `recurrences`): semanal, quinzenal ou mensal, com N vezes ou sem fim.
   Os lançamentos são criados de verdade, com id previsível `regra:número` (dois aparelhos não duplicam) e carimbo de
   data da regra. Sem fim mantém 12 meses à frente (`extendRecurrences`, ao abrir e após sincronizar). O contador
   `generated` só cresce: ocorrência apagada não volta. "Este e os próximos" altera os seguintes ainda não confirmados;
   excluir "este e os próximos" encerra a repetição. O padrão ao editar e excluir é **só este**.
-- Arquivos de backup e sincronização estão no formato 2 (`FILE_FORMAT`); versão antiga do app recusa e pede atualização.
+- Arquivos de backup e sincronização estão no formato 3 (`FILE_FORMAT`, inclui pessoas); versão antiga do app recusa e
+  pede atualização. Tabela nova sobe o formato.
 - Confirmação (`paid`) vale para os três tipos: despesa paga, receita recebida, investimento aplicado ou resgatado.
   **Pendentes contam no resultado do mês como previsto**; o Início mostra à parte o realizado e as pendências.
   No crédito, pagar marca a fatura inteira do cartão naquele mês.
@@ -143,8 +157,7 @@ Atualize ao entregar: tire o que foi feito, acrescente o que o dono pedir para d
 - **Teste com a conta da esposa** como convidada (ver Sincronização).
 - **Perguntas ao dono ainda sem resposta**: (1) em "A pagar no mês", a conta dividida conta só a minha parte (como
   hoje) ou o valor cheio que o banco cobra? (2) o resgate de investimento também em verde, como o estorno?
-- **Ideia oferecida**: dividir em categorias junto com parcelamento (cada parcela dividida entre as categorias;
-  centavos na 1ª; o alcance "só esta / próximas / todas" vale para a divisão inteira da parcela). Hoje o caminho é
-  lançar uma compra parcelada por categoria.
+- **Depois da 1.3.0**: os dois aparelhos (o do dono e o da esposa) precisam atualizar antes de sincronizar (formato 3).
+  Na tela de Recorrências, uma recorrência dividida aparece como uma regra por parte.
 - Desfazer uma divisão já salva: hoje só excluindo e lançando de novo.
 - Lançamentos a partir de notificações do celular: em espera.

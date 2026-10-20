@@ -4,16 +4,22 @@ import { Link } from 'react-router-dom'
 import { useApp } from '../../app/AppContext'
 import { CategoryBreakdown, percent as percentOf } from '../../components/CategoryBreakdown'
 import { MonthPicker } from '../../components/MonthPicker'
+import { PeopleBreakdown } from '../../components/PeopleBreakdown'
 import { TYPE_STYLE } from '../../components/typeStyle'
-import type { Category, PaymentMethod, Transaction } from '../../db/types'
+import type { Category, PaymentMethod, Person, Transaction } from '../../db/types'
 import { ALL_CREDIT, lancamentosLink } from '../../domain/filtro'
+import { peopleSummary, type ShareOverride } from '../../domain/pessoas'
 import { expenseBreakdown, methodBreakdown, summarize } from '../../domain/resumo'
 import { addMonths, formatBRL, monthLabel } from '../../lib/format'
+import { ProporcaoModal } from './ProporcaoModal'
 
 interface Props {
   transactions: Transaction[]
   categories: Map<string, Category>
   methods: Map<string, PaymentMethod>
+  people: Map<string, Person>
+  /** Ajuste manual da proporção, por mês. */
+  overrides: Record<string, ShareOverride>
 }
 
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0)
@@ -38,9 +44,10 @@ function Bar({ value, max }: { value: number; max: number }) {
   )
 }
 
-export function MonthReport({ transactions, categories, methods }: Props) {
+export function MonthReport({ transactions, categories, methods, people, overrides }: Props) {
   const { month } = useApp()
   const [cardsOpen, setCardsOpen] = useState(false)
+  const [adjusting, setAdjusting] = useState(false)
 
   const current = transactions.filter((t) => t.month === month)
   const summary = summarize(current)
@@ -48,6 +55,8 @@ export function MonthReport({ transactions, categories, methods }: Props) {
 
   // Em mês com mais resgate que aporte o investido fica negativo; na barra de destino da receita conta como zero.
   const netInvested = Math.max(0, summary.investimentos)
+
+  const byPerson = people.size > 0 ? peopleSummary(current, [...people.values()], overrides[month]) : null
 
   const expenses = current.filter((t) => t.type === 'despesa')
   const breakdown = expenseBreakdown(expenses)
@@ -101,6 +110,25 @@ export function MonthReport({ transactions, categories, methods }: Props) {
             <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-slate-200" />Sobra {Math.max(0, 100 - percent(summary.despesas + netInvested, summary.receitas))}%</span>
           </div>
         </section>
+      )}
+
+      {byPerson && current.length > 0 && (
+        <PeopleBreakdown
+          summary={byPerson}
+          people={people}
+          period="mes"
+          detailed
+          onAdjust={byPerson.adults.length > 1 ? () => setAdjusting(true) : undefined}
+        />
+      )}
+      {adjusting && byPerson && (
+        <ProporcaoModal
+          month={month}
+          adults={byPerson.adults}
+          people={people}
+          current={overrides[month]}
+          onClose={() => setAdjusting(false)}
+        />
       )}
 
       <CategoryBreakdown breakdown={breakdown} categories={categories} expandable />

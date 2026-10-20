@@ -7,8 +7,8 @@ import { db } from './db'
 import {
   deleteInstallments, deleteSplitParts, deleteTransactions, extendRecurrences, removePerson, resetAll, saveInstallments,
   saveMethod, savePerson, saveRecurring, saveSplit, saveSplitInstallments, saveSplitRecurring, saveTransaction,
-  setCategoryMany, setPaid, setPaidMany, setPersonMany, shiftInstallments, splitSiblings, updateFollowing,
-  updateInstallmentGroup, updateSplit,
+  setCategoryMany, setPaid, setPaidMany, setPersonMany, setShareOverride, shiftInstallments, splitSiblings,
+  updateFollowing, updateInstallmentGroup, updateSplit,
 } from './repo'
 import type { Transaction } from './types'
 
@@ -434,5 +434,20 @@ describe('divisão parcelada e recorrente', () => {
     expect((await byDate('2026-11-10')).map((t) => t.amount).sort()).toEqual([2000, 8000])
     expect((await byDate('2026-12-10')).map((t) => t.amount)).toEqual([10000])
     expect((await byDate('2027-01-10')).map((t) => t.amount)).toEqual([10000])
+  })
+})
+
+describe('ajuste manual da proporção', () => {
+  beforeEach(async () => {
+    await resetAll()
+  })
+
+  it('vale só para o mês; voltar ao automático apaga e deixa registro para a sincronização', async () => {
+    await setShareOverride('2026-10', { ana: 50, pedro: 50 })
+    expect((await db.settings.get('proporcao:2026-10'))!.value).toEqual({ ana: 50, pedro: 50 })
+    expect(await db.settings.get('proporcao:2026-11')).toBeUndefined()
+    await setShareOverride('2026-10', null)
+    expect(await db.settings.get('proporcao:2026-10')).toBeUndefined()
+    expect(await db.deletions.count()).toBe(1)
   })
 })
