@@ -8,11 +8,11 @@ import { MoneyInput } from '../../components/MoneyInput'
 import { TYPE_STYLE } from '../../components/typeStyle'
 import { db } from '../../db/db'
 import {
-  deleteInstallments, deleteSplit, deleteTransaction, endRecurrence, saveCategory, saveInstallments, saveRecurring,
-  saveSplit, saveTransaction, shiftInstallments, updateFollowing, updateInstallmentGroup,
+  deleteInstallments, deleteSplitParts, deleteTransaction, endRecurrence, saveCategory, saveInstallments, saveRecurring,
+  saveSplit, saveSplitInstallments, saveSplitRecurring, saveTransaction, shiftInstallments, splitSiblings, updateSplit, updateFollowing, updateInstallmentGroup,
 } from '../../db/repo'
 import { TX_LABEL, TX_TYPES, type PaymentMethod, type Transaction, type TxType } from '../../db/types'
-import { splitError } from '../../domain/divisao'
+import { partsByInstallment, splitError } from '../../domain/divisao'
 import { defaultPersonId } from '../../domain/pessoas'
 import { dueDateFor, isCredit, MAX_INVOICE_SHIFT } from '../../domain/fatura'
 import { planInstallments, type InstallmentMode } from '../../domain/parcelas'
@@ -98,10 +98,10 @@ export function TransactionForm({ tx, onClose }: Props) {
   const methods = (useLiveQuery(() => db.paymentMethods.toArray(), []) ?? []).sort(byName)
   const allPeople = (useLiveQuery(() => db.people.toArray(), []) ?? []).sort(byName)
 
-  // Abrir uma parte de uma compra dividida edita a divisão inteira: carrega as partes uma vez.
+  // Abrir uma parte de uma compra dividida edita a divisão daquela vez (a parcela ou a ocorrência).
   const savedParts = useLiveQuery<Transaction[] | null>(
-    () => (tx?.splitGroupId ? db.transactions.where('splitGroupId').equals(tx.splitGroupId).toArray() : null),
-    [tx?.splitGroupId],
+    () => (tx?.splitGroupId ? splitSiblings(tx) : null),
+    [tx?.id],
   )
   const partsLoaded = useRef(false)
   useEffect(() => {
@@ -109,7 +109,11 @@ export function TransactionForm({ tx, onClose }: Props) {
     partsLoaded.current = true
     // Maior parte primeiro: as partes nascem juntas, então a data de criação não dá uma ordem estável.
     const ordered = [...savedParts].sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id))
-    setParts(ordered.map((t) => newRow({ id: t.id, categoryId: t.categoryId, subcategoryId: t.subcategoryId, amount: t.amount })))
+    setParts(
+      ordered.map((t) =>
+        newRow({ id: t.id, categoryId: t.categoryId, subcategoryId: t.subcategoryId, personId: t.personId, amount: t.amount }),
+      ),
+    )
     setAmount(ordered.reduce((sum, t) => sum + t.amount, 0))
   }, [savedParts])
 
@@ -133,7 +137,11 @@ export function TransactionForm({ tx, onClose }: Props) {
   const credit = expense && isCredit(method)
   const estorno = expense && estornoOn
   const splitting = parts !== null
-  const repeating = !tx && !estorno && !splitting && repeat !== ''
+  const repeating = !tx && !estorno && repeat !== ''
+  // Compra dividida parcelada ou recorrente: as partes dizem o que ela é (uma parte avulsa pode não ter série).
+  const isInstallment = !!tx?.installmentGroupId || !!savedParts?.some((t) => t.installmentGroupId)
+  const isRecurring = !isInstallment && (!!tx?.recurrenceId || !!savedParts?.some((t) => t.recurrenceId))
+  const recurrenceNumber = tx?.recurrenceNumber ?? savedParts?.find((t) => t.recurrenceNumber)?.recurrenceNumber
   const share = expense && splitOn && !splitting ? myShare : undefined
   // Na recorrência o ajuste vai para a regra: todas as ocorrências caem na fatura movida.
   const invoiceShift = credit ? shift : 0
@@ -148,7 +156,7 @@ export function TransactionForm({ tx, onClose }: Props) {
   const paid = credit ? (tx?.paid ?? dueDate < todayISO()) : (paidManual ?? dueDate <= todayISO())
   // Repetição e parcelamento não se combinam: escolher um esconde o outro.
   const installments =
-    expense && !tx && !repeating && !estorno && !splitting ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
+    expense && !tx && !repeating && !estorno ? Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(Number(count)) || 1)) : 1
   const repeatCount = endless ? undefined : Math.max(2, Math.min(MAX_COUNT, Math.floor(Number(times)) || 2))
   // O que a repetição vai criar agora, para mostrar antes de salvar.
   const occurrences =
@@ -156,13 +164,12 @@ export function TransactionForm({ tx, onClose }: Props) {
       ? missingOccurrences({ frequency: repeat, startDate: date, count: repeatCount, generated: 0, ended: false }, todayISO())
       : []
   const plan = installments > 1 && date ? planInstallments(amount, mode, installments, dueDate, share) : null
-  // A divisão vale para compra à vista: não se combina com parcelas, repetição nem estorno.
-  const canSplit =
-    expense && !estorno && !repeating && installments === 1 && !tx?.installmentGroupId && !tx?.recurrenceId && !splitting
+  // A divisão vale para compra nova (à vista, parcelada ou recorrente) e para lançamento avulso já salvo.
+  const canSplit = expense && !estorno && !splitting && !tx?.installmentGroupId && !tx?.recurrenceId
 
   function startSplit() {
     setParts([
-      newRow({ id: tx?.id, categoryId, subcategoryId: subcategoryId || null }),
+      newRow({ id: tx?.id, categoryId, subcategoryId: subcategoryId || null, personId: personId || undefined }),
       newRow(),
     ])
   }
@@ -190,14 +197,16 @@ export function TransactionForm({ tx, onClose }: Props) {
     if (parts) {
       const problem = splitError(amount, parts)
       if (problem) return setError(problem)
-      await saveSplit(
-        {
-          type, date, dueDate, paymentMethodId: methodId, description: description.trim(), paid, resgate: false,
-          invoiceShift: invoiceShift || undefined,
-        },
-        parts,
-        tx?.splitGroupId,
-      )
+      const common = {
+        type, date, dueDate, paymentMethodId: methodId, description: description.trim(), paid, resgate: false,
+        invoiceShift: invoiceShift || undefined,
+      }
+      if (tx?.splitGroupId) await updateSplit(tx, common, parts, scope)
+      else if (repeating) await saveSplitRecurring(common, parts, { frequency: repeat, count: repeatCount })
+      else if (plan) {
+        const byPart = partsByInstallment(plan.map((p) => p.amount), parts.map((p) => p.amount), mode)
+        await saveSplitInstallments(common, parts, plan, byPart)
+      } else await saveSplit(common, parts)
       setMonth(monthOf(dueDate))
       return onClose()
     }
@@ -252,7 +261,7 @@ export function TransactionForm({ tx, onClose }: Props) {
 
   async function remove(choice: Scope | undefined) {
     if (!tx) return
-    if (tx.splitGroupId) await deleteSplit(tx.splitGroupId)
+    if (tx.splitGroupId) await deleteSplitParts(tx, choice ?? 'este')
     else if (tx.recurrenceId && choice === 'proximos') await endRecurrence(tx.recurrenceId, tx.recurrenceNumber)
     else if (tx.installmentGroupId && choice && choice !== 'este') {
       await deleteInstallments(tx, choice === 'todas' ? 'todas' : 'proximas')
@@ -270,13 +279,13 @@ export function TransactionForm({ tx, onClose }: Props) {
   }
 
   // Escolhas de alcance: parcelas têm "todas"; recorrência, só "este" ou "este e os próximos".
-  const scopeOptions: ConfirmOption<Scope>[] = tx?.installmentGroupId
+  const scopeOptions: ConfirmOption<Scope>[] = tx && isInstallment
     ? [
         { value: 'este', label: 'Só esta parcela' },
         { value: 'proximos', label: 'Esta e as próximas' },
         { value: 'todas', label: `Todas as ${tx.installmentTotal} parcelas` },
       ]
-    : tx?.recurrenceId
+    : isRecurring
       ? [
           { value: 'este', label: 'Só este' },
           { value: 'proximos', label: 'Este e os próximos', hint: 'A repetição é encerrada.' },
@@ -354,9 +363,9 @@ export function TransactionForm({ tx, onClose }: Props) {
           <div className="space-y-2 rounded-lg bg-slate-100 px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-slate-900 px-2 py-0.5 text-sm font-bold text-white">
-                {tx.installmentGroupId
+                {isInstallment
                   ? `Parcela ${tx.installmentNumber} de ${tx.installmentTotal}`
-                  : `Recorrente · nº ${tx.recurrenceNumber}`}
+                  : `Recorrente${recurrenceNumber ? ` · nº ${recurrenceNumber}` : ''}`}
               </span>
               <span className="text-sm text-slate-600">Salvar vale para:</span>
             </div>
@@ -369,13 +378,15 @@ export function TransactionForm({ tx, onClose }: Props) {
                   aria-pressed={scope === option.value}
                   className={`rounded-md px-1 py-1.5 text-xs font-semibold sm:text-sm ${scope === option.value ? 'seg-on' : 'text-slate-500'}`}
                 >
-                  {option.value === 'este' ? (tx.installmentGroupId ? 'Só esta' : 'Só este') : option.value === 'todas' ? 'Todas' : tx.installmentGroupId ? 'Esta e as próximas' : 'Este e os próximos'}
+                  {option.value === 'este' ? (isInstallment ? 'Só esta' : 'Só este') : option.value === 'todas' ? 'Todas' : isInstallment ? 'Esta e as próximas' : 'Este e os próximos'}
                 </button>
               ))}
             </div>
             {scope !== 'este' && (
               <p className="text-xs text-slate-500">
-                {tx.installmentGroupId
+                {splitting
+                  ? 'Cada parte leva categoria, pessoa, forma, descrição e o seu valor para as outras vezes do alcance. Parte nova entra no alcance; parte retirada sai dele.'
+                  : isInstallment
                   ? amount !== tx.amount
                     ? `Categoria, subcategoria, forma, descrição e o valor de ${formatBRL(amount)} por parcela passam para as outras parcelas. O total da compra muda.`
                     : 'Categoria, subcategoria, forma e descrição passam para as outras parcelas. Se mudar o valor, ele vale para cada parcela.'
@@ -432,6 +443,7 @@ export function TransactionForm({ tx, onClose }: Props) {
             total={amount}
             rows={parts}
             categories={categories.filter((c) => c.type === 'despesa')}
+            people={people}
             onChange={setParts}
             onCancel={tx?.splitGroupId ? undefined : () => setParts(null)}
           />
@@ -570,7 +582,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           )}
         </div>
 
-        {expense && !tx && !repeating && !estorno && !splitting && (
+        {expense && !tx && !repeating && !estorno && (
           <div className="space-y-2">
             <div className="flex items-end gap-3">
               <div className="w-28 shrink-0">
@@ -617,7 +629,7 @@ export function TransactionForm({ tx, onClose }: Props) {
           </div>
         )}
 
-        {!tx && installments === 1 && !estorno && !splitting && (
+        {!tx && installments === 1 && !estorno && (
           <div className="space-y-2">
             <div>
               <label className="label" htmlFor="tx-repetir">Repetir</label>
@@ -738,10 +750,12 @@ export function TransactionForm({ tx, onClose }: Props) {
 
       {confirmDelete && tx && (
         <ConfirmDialog<Scope>
-          title={tx.installmentGroupId ? 'Excluir parcela' : tx.splitGroupId ? 'Excluir compra dividida' : 'Excluir lançamento'}
+          title={isInstallment ? 'Excluir parcela' : tx.splitGroupId ? 'Excluir compra dividida' : 'Excluir lançamento'}
           message={
             scopeOptions.length > 0
-              ? 'O que você quer excluir?'
+              ? tx.splitGroupId
+                ? `Vale para as ${parts?.length ?? 0} partes da divisão. O que você quer excluir?`
+                : 'O que você quer excluir?'
               : tx.splitGroupId
                 ? `A compra inteira será excluída, com as ${parts?.length ?? 0} partes.`
                 : 'Este lançamento será excluído.'

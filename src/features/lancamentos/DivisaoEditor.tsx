@@ -1,6 +1,6 @@
 import { Plus, X } from 'lucide-react'
 import { MoneyInput } from '../../components/MoneyInput'
-import type { Category } from '../../db/types'
+import type { Category, Person } from '../../db/types'
 import { remaining, type SplitPart } from '../../domain/divisao'
 import { formatBRL } from '../../lib/format'
 
@@ -20,13 +20,15 @@ interface Props {
   rows: SplitRow[]
   /** Categorias de despesa (inclui subcategorias). */
   categories: Category[]
+  /** Pessoas que podem ser escolhidas; sem pessoas cadastradas, a coluna não aparece. */
+  people: Person[]
   onChange: (rows: SplitRow[]) => void
   /** Volta a ser uma compra de uma categoria só (apenas antes de a divisão ser salva). */
   onCancel?: () => void
 }
 
 /** Linhas de categoria, subcategoria e valor de uma compra dividida, com o quanto falta distribuir. */
-export function DivisaoEditor({ total, rows, categories, onChange, onCancel }: Props) {
+export function DivisaoEditor({ total, rows, categories, people, onChange, onCancel }: Props) {
   const left = remaining(total, rows)
   const update = (key: string, changes: Partial<SplitPart>) =>
     onChange(rows.map((row) => (row.key === key ? { ...row, ...changes } : row)))
@@ -36,7 +38,7 @@ export function DivisaoEditor({ total, rows, categories, onChange, onCancel }: P
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 p-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold">Dividida em categorias</span>
+        <span className="text-sm font-semibold">Dividida em {people.length > 0 ? 'partes' : 'categorias'}</span>
         {onCancel && (
           <button type="button" className="text-xs font-semibold text-slate-500 hover:underline" onClick={onCancel}>
             Desfazer divisão
@@ -62,6 +64,11 @@ export function DivisaoEditor({ total, rows, categories, onChange, onCancel }: P
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
               </select>
+              <MoneyInput
+                value={row.amount}
+                onChange={(amount) => update(row.key, { amount })}
+                className="field w-32 shrink-0 text-right font-semibold"
+              />
               {rows.length > 2 && (
                 <button
                   type="button"
@@ -73,28 +80,36 @@ export function DivisaoEditor({ total, rows, categories, onChange, onCancel }: P
                 </button>
               )}
             </div>
-            <div className="flex gap-2">
-              {subs.length > 0 ? (
-                <select
-                  className="field"
-                  aria-label={`Subcategoria da parte ${i + 1}`}
-                  value={row.subcategoryId ?? ''}
-                  onChange={(e) => update(row.key, { subcategoryId: e.target.value || null })}
-                >
-                  <option value="">Sem subcategoria</option>
-                  {subs.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <span className="flex-1" />
-              )}
-              <MoneyInput
-                value={row.amount}
-                onChange={(amount) => update(row.key, { amount })}
-                className="field w-36 shrink-0 text-right font-semibold"
-              />
-            </div>
+            {(subs.length > 0 || people.length > 0) && (
+              <div className="flex gap-2">
+                {subs.length > 0 && (
+                  <select
+                    className="field"
+                    aria-label={`Subcategoria da parte ${i + 1}`}
+                    value={row.subcategoryId ?? ''}
+                    onChange={(e) => update(row.key, { subcategoryId: e.target.value || null })}
+                  >
+                    <option value="">Sem subcategoria</option>
+                    {subs.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+                {people.length > 0 && (
+                  <select
+                    className="field"
+                    aria-label={`De quem é a parte ${i + 1}`}
+                    value={row.personId ?? ''}
+                    onChange={(e) => update(row.key, { personId: e.target.value || undefined })}
+                  >
+                    <option value="">Família</option>
+                    {people.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
           </div>
         )
       })}
@@ -105,7 +120,7 @@ export function DivisaoEditor({ total, rows, categories, onChange, onCancel }: P
           className="flex items-center gap-1 font-semibold text-slate-600 hover:underline"
           onClick={() => onChange([...rows, newRow()])}
         >
-          <Plus size={14} /> Adicionar categoria
+          <Plus size={14} /> Adicionar parte
         </button>
         <span className={left === 0 ? 'font-semibold text-emerald-600' : 'font-semibold text-amber-600'}>
           {left === 0 ? 'Tudo distribuído' : left > 0 ? `Falta ${formatBRL(left)}` : `Passou ${formatBRL(-left)}`}

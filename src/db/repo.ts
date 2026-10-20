@@ -2,7 +2,7 @@
 // Trocar o armazenamento local por nuvem no futuro significa reescrever só este arquivo.
 import { BACKUP_TABLES, buildBackup, type Backup, type BackupTable } from '../domain/backup'
 import { dueDateFor, isCredit } from '../domain/fatura'
-import type { SplitPart } from '../domain/divisao'
+import { splitSlot, type SplitPart } from '../domain/divisao'
 import type { Installment } from '../domain/parcelas'
 import { missingOccurrences, occurrenceDate } from '../domain/recorrencia'
 import { addMonthsToDate, monthOf, todayISO } from '../lib/format'
@@ -259,6 +259,7 @@ function buildOccurrences(rule: Recurrence, numbers: number[], method: PaymentMe
       ...(rule.myShare !== undefined && { myShare: rule.myShare }),
       ...(rule.invoiceShift && isCredit(method) && { invoiceShift: rule.invoiceShift }),
       ...(rule.personId && { personId: rule.personId }),
+      ...(rule.splitGroupId && { splitGroupId: rule.splitGroupId }),
       date,
       dueDate,
       month: monthOf(dueDate),
@@ -308,6 +309,7 @@ export async function saveRecurring(
     myShare: input.myShare,
     invoiceShift: input.invoiceShift,
     personId: input.personId,
+    splitGroupId: input.splitGroupId,
     createdAt: stamp,
     updatedAt: stamp,
   }
@@ -384,8 +386,9 @@ export async function setPaid(tx: Transaction, paid: boolean): Promise<void> {
       .filter((t) => t.paymentMethodId === tx.paymentMethodId && t.type === 'despesa')
       .modify(changes)
   } else if (tx.splitGroupId) {
-    // As partes de uma compra dividida foram pagas juntas.
-    await db.transactions.where('splitGroupId').equals(tx.splitGroupId).modify(changes)
+    // As partes da mesma vez (parcela ou data) de uma compra dividida foram pagas juntas.
+    const slot = splitSlot(tx)
+    await db.transactions.where('splitGroupId').equals(tx.splitGroupId).filter((t) => splitSlot(t) === slot).modify(changes)
   } else {
     await db.transactions.update(tx.id, changes)
   }
@@ -413,9 +416,14 @@ export async function setPaidMany(txs: Transaction[], paid: boolean): Promise<vo
   const stamp = now()
   await db.transaction('rw', db.transactions, async () => {
     const plain = txs.filter((t) => !onInvoice(t))
-    // As outras partes de uma compra dividida acompanham a parte escolhida.
+    // As outras partes da mesma vez de uma compra dividida acompanham a parte escolhida.
+    const slots = new Set(plain.filter((t) => t.splitGroupId).map((t) => `${t.splitGroupId}|${splitSlot(t)}`))
     const groups = [...new Set(plain.map((t) => t.splitGroupId).filter((id): id is string => !!id))]
-    const siblings = groups.length ? await db.transactions.where('splitGroupId').anyOf(groups).primaryKeys() : []
+    const siblings = groups.length
+      ? (await db.transactions.where('splitGroupId').anyOf(groups).toArray())
+          .filter((t) => slots.has(`${t.splitGroupId}|${splitSlot(t)}`))
+          .map((t) => t.id)
+      : []
     const ids = [...new Set([...plain.map((t) => t.id), ...siblings])]
     await db.transactions.bulkUpdate(ids.map((key) => ({ key, changes: { paid, updatedAt: stamp } })))
     for (const t of invoices.values()) await setInvoicePaid(t.paymentMethodId, t.month, paid)
@@ -426,36 +434,170 @@ export async function setPaidMany(txs: Transaction[], paid: boolean): Promise<vo
 export const setCategoryMany = (ids: string[], categoryId: string, subcategoryId: string | null) =>
   db.transactions.bulkUpdate(ids.map((key) => ({ key, changes: { categoryId, subcategoryId, updatedAt: now() } })))
 
-// ---------- compra dividida em categorias ----------
+// ---------- compra dividida (partes de categoria e pessoa) ----------
 
-/**
- * Grava a compra dividida: uma despesa por parte, com os mesmos dados da compra. Ao editar, as partes
- * que já existem são atualizadas e as retiradas da divisão são excluídas.
- */
-export async function saveSplit(
-  input: Omit<TransactionInput, 'id' | 'amount' | 'categoryId' | 'subcategoryId'>,
-  parts: SplitPart[],
-  splitGroupId: string = crypto.randomUUID(),
-): Promise<void> {
+/** Dados comuns a todas as partes de uma compra dividida: data, vencimento, forma, situação, descrição. */
+export type SplitCommon = Omit<TransactionInput, 'id' | 'amount' | 'categoryId' | 'subcategoryId' | 'personId'>
+
+/** Alcance ao editar ou excluir uma compra dividida parcelada ou recorrente. */
+export type SplitScope = 'este' | 'proximos' | 'todas'
+
+const partFields = (p: SplitPart) => ({
+  categoryId: p.categoryId,
+  subcategoryId: p.subcategoryId,
+  personId: p.personId || undefined,
+})
+
+/** As partes da mesma vez (parcela ou data) da compra dividida; um lançamento comum é a sua própria parte. */
+export async function splitSiblings(tx: Transaction): Promise<Transaction[]> {
+  if (!tx.splitGroupId) return [tx]
+  const slot = splitSlot(tx)
+  return db.transactions.where('splitGroupId').equals(tx.splitGroupId).filter((t) => splitSlot(t) === slot).toArray()
+}
+
+/** Compra à vista dividida: uma despesa por parte. Um lançamento comum aberto vira a primeira parte. */
+export async function saveSplit(common: SplitCommon, parts: SplitPart[]): Promise<void> {
   const stamp = now()
-  const month = monthOf(input.dueDate)
-  const keep = new Set(parts.map((p) => p.id))
-  const stale = (await db.transactions.where('splitGroupId').equals(splitGroupId).primaryKeys()).filter((id) => !keep.has(id))
-  await db.transaction('rw', db.transactions, db.deletions, async () => {
-    await remove('transactions', stale)
+  const splitGroupId = crypto.randomUUID()
+  await db.transaction('rw', db.transactions, async () => {
     for (const p of parts) {
-      const values = {
-        ...input, amount: p.amount, categoryId: p.categoryId, subcategoryId: p.subcategoryId, month, splitGroupId,
-        updatedAt: stamp,
-      }
+      const values = { ...common, ...partFields(p), amount: p.amount, month: monthOf(common.dueDate), splitGroupId, updatedAt: stamp }
       if (p.id) await db.transactions.update(p.id, values)
       else await db.transactions.add({ ...values, id: crypto.randomUUID(), createdAt: stamp })
     }
   })
 }
 
-export const deleteSplit = async (splitGroupId: string) =>
-  remove('transactions', await db.transactions.where('splitGroupId').equals(splitGroupId).primaryKeys())
+/** Compra parcelada dividida: cada parte vira uma série de parcelas, todas no mesmo grupo da divisão. */
+export async function saveSplitInstallments(
+  common: Omit<SplitCommon, 'dueDate'>,
+  parts: SplitPart[],
+  plan: Installment[],
+  byPart: number[][],
+): Promise<void> {
+  const splitGroupId = crypto.randomUUID()
+  await db.transaction('rw', db.transactions, async () => {
+    for (const [k, p] of parts.entries()) {
+      await saveInstallments(
+        { ...common, ...partFields(p), splitGroupId },
+        plan.map((inst, j) => ({ number: inst.number, dueDate: inst.dueDate, amount: byPart[k][j] })),
+      )
+    }
+  })
+}
+
+/** Recorrência dividida: uma regra por parte, todas no mesmo grupo da divisão. */
+export async function saveSplitRecurring(
+  common: SplitCommon,
+  parts: SplitPart[],
+  repeat: Pick<Recurrence, 'frequency' | 'count'>,
+): Promise<void> {
+  const splitGroupId = crypto.randomUUID()
+  for (const p of parts) await saveRecurring({ ...common, ...partFields(p), amount: p.amount, splitGroupId }, repeat)
+}
+
+/**
+ * Edita as partes de uma vez da compra dividida (a aberta e as irmãs dela). Com alcance, cada parte leva
+ * as mudanças para a sua série de parcelas ou para a sua regra; parte nova cria série ou regra no alcance;
+ * parte retirada é excluída no alcance. O valor de cada parte vale por parcela ou por ocorrência.
+ */
+export async function updateSplit(tx: Transaction, common: SplitCommon, parts: SplitPart[], scope: SplitScope): Promise<void> {
+  const siblings = await splitSiblings(tx)
+  const splitGroupId = tx.splitGroupId ?? crypto.randomUUID()
+  const method = await db.paymentMethods.get(common.paymentMethodId)
+  const stamp = now()
+  const month = monthOf(common.dueDate)
+  const wide = scope !== 'este'
+  const installmentScope: InstallmentScope = scope === 'todas' ? 'todas' : 'proximas'
+  const keep = new Set(parts.map((p) => p.id).filter(Boolean))
+
+  // Partes retiradas.
+  for (const s of siblings.filter((t) => !keep.has(t.id))) {
+    if (wide && s.installmentGroupId) await deleteInstallments(s, installmentScope)
+    else if (wide && s.recurrenceId) await endRecurrence(s.recurrenceId, s.recurrenceNumber)
+    else await remove('transactions', [s.id])
+  }
+
+  for (const p of parts) {
+    const values = { ...common, ...partFields(p), amount: p.amount, month, splitGroupId, updatedAt: stamp }
+    const before = siblings.find((t) => t.id === p.id)
+    if (before) {
+      await db.transactions.update(before.id, values)
+      if (wide && before.installmentGroupId) {
+        await updateInstallmentGroup(
+          before,
+          {
+            ...partFields(p), paymentMethodId: common.paymentMethodId, description: common.description,
+            ...(p.amount !== before.amount && { amount: p.amount }),
+          },
+          installmentScope,
+        )
+      } else if (wide && before.recurrenceId) {
+        await updateFollowing(before, {
+          ...partFields(p), type: common.type, amount: p.amount, paymentMethodId: common.paymentMethodId,
+          description: common.description, resgate: false, myShare: undefined, invoiceShift: common.invoiceShift,
+        })
+      }
+      continue
+    }
+
+    // Parte nova: só nesta vez, ou uma série/regra nova no alcance.
+    const total = tx.installmentTotal
+    const number = tx.installmentNumber
+    if (wide && total && number) {
+      const installmentGroupId = crypto.randomUUID()
+      const today = todayISO()
+      const numbers = Array.from({ length: total }, (_, j) => j + 1).filter((j) => scope === 'todas' || j >= number)
+      await db.transactions.bulkAdd(
+        numbers.map((j) => {
+          const dueDate = isCredit(method)
+            ? addMonthsToDate(dueDateFor(common.date, method, common.invoiceShift), j - 1)
+            : addMonthsToDate(common.dueDate, j - number)
+          return {
+            ...values, id: crypto.randomUUID(), dueDate, month: monthOf(dueDate),
+            paid: j === number ? common.paid : dueDate < today,
+            installmentGroupId, installmentNumber: j, installmentTotal: total, createdAt: stamp,
+          }
+        }),
+      )
+      continue
+    }
+    const template = siblings.find((t) => t.recurrenceId)
+    const rule = wide && template ? await db.recurrences.get(template.recurrenceId!) : undefined
+    if (rule && template?.recurrenceNumber) {
+      // Regra nova com a mesma data de início e frequência, a partir desta ocorrência: as datas batem.
+      const fresh: Recurrence = {
+        ...rule, ...partFields(p), id: crypto.randomUUID(), amount: p.amount, paymentMethodId: common.paymentMethodId,
+        description: common.description, invoiceShift: common.invoiceShift, splitGroupId,
+        generated: template.recurrenceNumber - 1, ended: false, createdAt: stamp, updatedAt: stamp,
+      }
+      await db.recurrences.add(fresh)
+      await materialize(fresh)
+      await db.transactions.update(occurrenceId(fresh.id, template.recurrenceNumber), { paid: common.paid })
+      continue
+    }
+    await db.transactions.add({
+      ...values, id: crypto.randomUUID(), createdAt: stamp,
+      // Numa compra parcelada, a parte só desta vez fica na mesma parcela (série própria, de uma parcela só).
+      ...(total && number && { installmentGroupId: crypto.randomUUID(), installmentNumber: number, installmentTotal: total }),
+    })
+  }
+
+  // Mover de fatura leva a compra parcelada inteira: todas as séries de parcelas da divisão.
+  if (tx.installmentGroupId && isCredit(method) && (common.invoiceShift ?? 0) !== (tx.invoiceShift ?? 0)) {
+    const lines = await splitSiblings({ ...tx, splitGroupId })
+    for (const line of lines) await shiftInstallments(line, common.paymentMethodId, common.invoiceShift ?? 0)
+  }
+}
+
+/** Exclui as partes de uma vez da compra dividida; com alcance, também as parcelas ou ocorrências seguintes. */
+export async function deleteSplitParts(tx: Transaction, scope: SplitScope): Promise<void> {
+  for (const s of await splitSiblings(tx)) {
+    if (scope !== 'este' && s.installmentGroupId) await deleteInstallments(s, scope === 'todas' ? 'todas' : 'proximas')
+    else if (scope !== 'este' && s.recurrenceId) await endRecurrence(s.recurrenceId, s.recurrenceNumber)
+    else await remove('transactions', [s.id])
+  }
+}
 
 /** Alcance de uma alteração numa compra parcelada, a partir da parcela aberta. */
 export type InstallmentScope = 'proximas' | 'todas'

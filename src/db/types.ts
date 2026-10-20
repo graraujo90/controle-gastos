@@ -144,6 +144,8 @@ export interface Recurrence extends Base {
   invoiceShift?: number
   /** De quem é cada ocorrência. Vazio = da família. */
   personId?: string
+  /** Recorrência dividida: uma regra por parte, todas com o mesmo grupo (cada ocorrência leva o grupo). */
+  splitGroupId?: string
 }
 
 export interface Budget extends Base {

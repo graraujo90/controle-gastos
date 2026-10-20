@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { partsByInstallment } from '../domain/divisao'
 import { dueDateFor } from '../domain/fatura'
 import { db } from './db'
 import {
-  deleteInstallments, deleteTransactions, resetAll, saveInstallments, saveMethod, saveTransaction, setCategoryMany,
-  deleteSplit, extendRecurrences, removePerson, savePerson, saveRecurring, saveSplit, setPaid, setPaidMany, setPersonMany,
-  shiftInstallments, updateFollowing, updateInstallmentGroup,
+  deleteInstallments, deleteSplitParts, deleteTransactions, extendRecurrences, removePerson, resetAll, saveInstallments,
+  saveMethod, savePerson, saveRecurring, saveSplit, saveSplitInstallments, saveSplitRecurring, saveTransaction,
+  setCategoryMany, setPaid, setPaidMany, setPersonMany, shiftInstallments, splitSiblings, updateFollowing,
+  updateInstallmentGroup, updateSplit,
 } from './repo'
 import type { Transaction } from './types'
 
@@ -203,10 +205,10 @@ describe('compra dividida em categorias', () => {
   it('editar mantém as partes que ficam e exclui as retiradas', async () => {
     const { input, food, other, parts } = await market()
     const kept = parts.find((t) => t.categoryId === food.id)!
-    await saveSplit(input, [
+    await updateSplit(kept, input, [
       { id: kept.id, categoryId: food.id, subcategoryId: null, amount: 20000 },
       { categoryId: other.id, subcategoryId: null, amount: 10000 },
-    ], kept.splitGroupId)
+    ], 'este')
     const after = await db.transactions.toArray()
     expect(after.map((t) => t.amount).sort()).toEqual([10000, 20000])
     expect(after.some((t) => t.id === kept.id)).toBe(true)
@@ -223,7 +225,7 @@ describe('compra dividida em categorias', () => {
 
   it('excluir a divisão apaga todas as partes', async () => {
     const { parts } = await market()
-    await deleteSplit(parts[0].splitGroupId!)
+    await deleteSplitParts(parts[0], 'este')
     expect(await db.transactions.count()).toBe(0)
   })
 })
@@ -340,5 +342,97 @@ describe('pessoas', () => {
     expect((await db.transactions.toArray()).every((t) => t.personId === ana)).toBe(true)
     await setPersonMany([ids[1]], null)
     expect((await db.transactions.get(ids[1]))!.personId).toBeUndefined()
+  })
+})
+
+describe('divisão parcelada e recorrente', () => {
+  beforeEach(async () => {
+    await resetAll()
+  })
+
+  async function setup() {
+    const [home, sport] = (await db.categories.toArray()).filter((c) => c.type === 'despesa' && !c.parentId)
+    const cash = (await db.paymentMethods.toArray()).find((m) => m.kind !== 'credito')!
+    const pedro = await savePerson({ name: 'Pedro', kind: 'adulto', archived: false })
+    const common = {
+      type: 'despesa' as const, date: '2026-10-10', paymentMethodId: cash.id, description: 'geladeira', paid: false,
+      resgate: false,
+    }
+    return { home, sport, cash, pedro, common }
+  }
+  const slotOf = async (n: number) =>
+    (await db.transactions.toArray()).filter((t) => t.installmentNumber === n).sort((a, b) => b.amount - a.amount)
+
+  // Geladeira de R$ 1.000 em 4×: R$ 700 da família (Casa) e R$ 300 do Pedro (Esporte).
+  async function fridge() {
+    const s = await setup()
+    const plan = ['2026-10-10', '2026-11-10', '2026-12-10', '2027-01-10'].map((dueDate, i) => ({ number: i + 1, amount: 25000, dueDate }))
+    const parts = [
+      { categoryId: s.home.id, subcategoryId: null, amount: 70000 },
+      { categoryId: s.sport.id, subcategoryId: null, personId: s.pedro, amount: 30000 },
+    ]
+    await saveSplitInstallments(s.common, parts, plan, partsByInstallment(plan.map((p) => p.amount), [70000, 30000], 'total'))
+    return s
+  }
+
+  it('cada parte vira uma série de parcelas; cada parcela fecha com o valor da fatura', async () => {
+    const { pedro } = await fridge()
+    const txs = await db.transactions.toArray()
+    expect(txs).toHaveLength(8)
+    expect(new Set(txs.map((t) => t.splitGroupId)).size).toBe(1)
+    expect(new Set(txs.map((t) => t.installmentGroupId)).size).toBe(2)
+    for (const n of [1, 2, 3, 4]) expect((await slotOf(n)).reduce((sum, t) => sum + t.amount, 0)).toBe(25000)
+    expect(txs.filter((t) => t.personId === pedro).reduce((sum, t) => sum + t.amount, 0)).toBe(30000)
+  })
+
+  it('abrir uma parcela traz só as partes daquela parcela; confirmar confirma as duas', async () => {
+    await fridge()
+    const [first] = await slotOf(2)
+    expect((await splitSiblings(first)).map((t) => t.installmentNumber)).toEqual([2, 2])
+    await setPaid(first, true)
+    expect((await db.transactions.toArray()).filter((t) => t.paid).map((t) => t.installmentNumber)).toEqual([2, 2])
+  })
+
+  it('"esta e as próximas": muda a pessoa da parte e cria a parte nova da parcela em diante', async () => {
+    const { home, sport, common, cash } = await fridge()
+    const [familyPart, pedroPart] = await slotOf(3)
+    await updateSplit(familyPart, { ...common, dueDate: '2026-12-10', paymentMethodId: cash.id }, [
+      { id: familyPart.id, categoryId: home.id, subcategoryId: null, amount: 12500 },
+      { id: pedroPart.id, categoryId: sport.id, subcategoryId: null, amount: 7500 },
+      { categoryId: sport.id, subcategoryId: null, amount: 5000 },
+    ], 'proximos')
+    // Parcelas 1 e 2 não mudam; 3 e 4 passam a ter três partes, ainda somando a parcela.
+    expect((await slotOf(2)).map((t) => t.amount)).toEqual([17500, 7500])
+    for (const n of [3, 4]) {
+      const slot = await slotOf(n)
+      expect(slot.map((t) => t.amount)).toEqual([12500, 7500, 5000])
+      expect(slot.find((t) => t.amount === 7500)!.personId).toBeUndefined()
+    }
+  })
+
+  it('excluir "todas" apaga a compra inteira, com todas as partes', async () => {
+    await fridge()
+    const [first] = await slotOf(1)
+    await deleteSplitParts(first, 'todas')
+    expect(await db.transactions.count()).toBe(0)
+  })
+
+  it('recorrência dividida: uma regra por parte; "este e os próximos" retira uma parte daqui em diante', async () => {
+    const { home, sport, pedro, common } = await setup()
+    await saveSplitRecurring({ ...common, description: 'internet', dueDate: '2026-10-10' }, [
+      { categoryId: home.id, subcategoryId: null, amount: 8000 },
+      { categoryId: sport.id, subcategoryId: null, personId: pedro, amount: 2000 },
+    ], { frequency: 'mensal', count: 4 })
+    expect(await db.recurrences.count()).toBe(2)
+    const byDate = async (date: string) => (await db.transactions.toArray()).filter((t) => t.date === date)
+    expect((await byDate('2026-12-10')).map((t) => t.amount).sort()).toEqual([2000, 8000])
+
+    const [third] = (await byDate('2026-12-10')).filter((t) => t.amount === 8000)
+    await updateSplit(third, { ...common, description: 'internet', dueDate: '2026-12-10', date: '2026-12-10' }, [
+      { id: third.id, categoryId: home.id, subcategoryId: null, amount: 10000 },
+    ], 'proximos')
+    expect((await byDate('2026-11-10')).map((t) => t.amount).sort()).toEqual([2000, 8000])
+    expect((await byDate('2026-12-10')).map((t) => t.amount)).toEqual([10000])
+    expect((await byDate('2027-01-10')).map((t) => t.amount)).toEqual([10000])
   })
 })
